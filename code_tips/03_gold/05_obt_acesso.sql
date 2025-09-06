@@ -1,4 +1,4 @@
-CREATE OR REFRESH LIVE TABLE dataslight_dev.gold.obt_acesso
+CREATE OR REFRESH MATERIALIZED VIEW dataslight_dev.gold.obt_acesso
 TBLPROPERTIES ("quality" = "gold")
 AS
     SELECT 

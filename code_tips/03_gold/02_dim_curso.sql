@@ -9,10 +9,12 @@ CREATE OR REFRESH STREAMING TABLE dataslight_dev.gold.dim_curso (
 )
 TBLPROPERTIES ("quality" = "gold");
 
-APPLY CHANGES INTO dataslight_dev.gold.dim_curso
+CREATE FLOW gold_dim_curso_flow 
+AS 
+AUTO CDC INTO dataslight_dev.gold.dim_curso
 FROM STREAM(dataslight_dev.bronze.dados_database)
-    KEYS (curso_uuid)
-    APPLY AS DELETE WHEN change_type = "delete"
-    SEQUENCE BY timestamp_change
-    COLUMNS * EXCEPT (timestamp_change, change_type, _rescued_data, processing_time, source_file_name)
-    STORED AS SCD TYPE 2;
+KEYS (curso_uuid)
+APPLY AS DELETE WHEN change_type = "delete"
+SEQUENCE BY timestamp_change
+COLUMNS * EXCEPT (timestamp_change, change_type, _rescued_data, processing_time, source_file_name)
+STORED AS SCD TYPE 2;

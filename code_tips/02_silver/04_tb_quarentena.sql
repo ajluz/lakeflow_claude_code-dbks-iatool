@@ -1,4 +1,4 @@
-CREATE OR REFRESH STREAMING LIVE TABLE dataslight_dev.silver.tb_quarentena
+CREATE OR REFRESH STREAMING LIVE TABLE workspace.silver.tb_quarentena
 TBLPROPERTIES ("quality" = "silver")
   AS 
     SELECT * 

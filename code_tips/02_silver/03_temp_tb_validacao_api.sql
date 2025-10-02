@@ -1,4 +1,4 @@
-CREATE OR REFRESH TEMPORARY STREAMING TABLE dataslight_dev.silver.temp_tb_validacao_api
+CREATE OR REFRESH TEMPORARY STREAMING TABLE workspace.silver.temp_tb_validacao_api
   (
   CONSTRAINT curso_invalido EXPECT (
     payload.info_produto.product_name IS NULL

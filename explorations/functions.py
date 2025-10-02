@@ -13,7 +13,7 @@ import time
 import pyspark.sql.functions as F
 from pyspark.sql.types import *
 
-def generate_api_data():
+def generate_api_data(number_rows, run_as_batch=False):
     estados = ['RO','AC','AM','RR','PA','AP','TO','MA','PI','CE','RN','PB','PE','AL','SE','BA','MG','ES','RJ','SP','PR','SC','RS','MS','MT','GO','DF']
     profissao_usuario = ['Engenheiro de Dados','Arquiteto de Dados', 'Analista de Dados', 'Analista de BI', 'Cientista de Dados', 'Analista de Negocio', 'Desenvolvedor de ETL', 'Desenvolvedor de Sistemas']
     cursos = [
@@ -171,7 +171,7 @@ def generate_api_data():
                     baseColumn="id_venda")
         
         .withColumn("valor_disconto", 
-                    StringType(),
+                    DecimalType(9,2),
                     omit=True, 
                     expr="cast((valor * disconto) as numeric(9,2))",
                     baseColumn=["id_venda",'valor', 'disconto'])
@@ -301,16 +301,31 @@ def generate_api_data():
                     baseColumn=['info_usuario','info_produto','info_pagamento'])
     )
 
-    df = df_test.build(withStreaming=True, options={'rowsPerSecond': 387}).drop('id')
+    df = df_test.build(withStreaming=True, options={'rowsPerSecond': number_rows}).drop('id')
     
-    generate_api_stream_data = (
-        df.writeStream
-            .format('json')
-            .outputMode('append')
-            .queryName('generate_api_stream_data')
-            .option('checkpointLocation','/Volumes/dataslight_dev/bronze/landing/_checkpoint_stream')
-            .start("/Volumes/dataslight_dev/bronze/landing/stream")
-    )
+    if run_as_batch == True:
+        generate_api_stream_data = (
+            df.writeStream
+                .format('json')
+                .outputMode('append')
+                .queryName('generate_api_stream_data')
+                ### Adicionado para funcionar no databricks Free
+                ### Se você estiver estudando em um ambiente fora do Free 
+                ### a linha de trigger pode ser removida e o processo vai rodar
+                ### continuamente.
+                .trigger(availableNow=True)
+                .option('checkpointLocation','/Volumes/workspace/bronze/landing/_checkpoint_stream')
+                .start("/Volumes/workspace/bronze/landing/stream")
+        )
+    else:
+        generate_api_stream_data = (
+            df.writeStream
+                .format('json')
+                .outputMode('append')
+                .queryName('generate_api_stream_data')
+                .option('checkpointLocation','/Volumes/workspace/bronze/landing/_checkpoint_stream')
+                .start("/Volumes/workspace/bronze/landing/stream")
+        )   
     
     return generate_api_stream_data
 
@@ -420,17 +435,17 @@ def generate_files_data(number_rows):
 
     df = df_test.build().drop('id')
 
-    df.coalesce(1).write.format('csv').mode('append').option('header',True).option('sep',',').save('/Volumes/dataslight_dev/bronze/landing/files')
+    df.coalesce(1).write.format('csv').mode('append').option('header',True).option('sep',',').save('/Volumes/workspace/bronze/landing/files')
 
     exclusion_list = ['_committed','_started','_SUCCESS']
     for file_to_be_excluded in exclusion_list:
-        for file in dbutils.fs.ls('/Volumes/dataslight_dev/bronze/landing/files'):
+        for file in dbutils.fs.ls('/Volumes/workspace/bronze/landing/files'):
             if file_to_be_excluded in file.name:
-                dbutils.fs.rm(f'/Volumes/dataslight_dev/bronze/landing/files/{file.name}')
+                dbutils.fs.rm(f'/Volumes/workspace/bronze/landing/files/{file.name}')
 
-    spark.read.text(f'/Volumes/dataslight_dev/bronze/landing/files/{file.name}').limit(2)
+    spark.read.text(f'/Volumes/workspace/bronze/landing/files/{file.name}').limit(2)
 
-    return print(f"O arquivo .csv com {number_rows} registros foi gerado no diretorio '/Volumes/dataslight_dev/bronze/landing/files'.")
+    return print(f"O arquivo .csv com {number_rows} registros foi gerado no diretorio '/Volumes/workspace/bronze/landing/files'.")
 
 # COMMAND ----------
 
@@ -465,7 +480,7 @@ def generate_database_data(type_of_data='initial setup'):
                     'insert' AS change_type,
                     current_timestamp() AS timestamp_change
         """)
-        curso_df.coalesce(1).write.format('csv').option('header',True).option('sep',',').mode('overwrite').save('/Volumes/dataslight_dev/bronze/landing/database')
+        curso_df.coalesce(1).write.format('csv').option('header',True).option('sep',',').mode('overwrite').save('/Volumes/workspace/bronze/landing/database')
         print(f'O arquivo de INSERT com origem DATABASE foi criado com sucesso.')
 
     elif type_of_data == 'update row':
@@ -478,7 +493,7 @@ def generate_database_data(type_of_data='initial setup'):
              'update' AS change_type,
             current_timestamp() AS timestamp_change
         """)
-        curso_df.coalesce(1).write.format('csv').option('header',True).option('sep',',').mode('append').save('/Volumes/dataslight_dev/bronze/landing/database')
+        curso_df.coalesce(1).write.format('csv').option('header',True).option('sep',',').mode('append').save('/Volumes/workspace/bronze/landing/database')
         print(f'O arquivo de UPDATE com origem DATABASE foi criado com sucesso.')
 
     elif type_of_data == 'delete row':
@@ -491,13 +506,13 @@ def generate_database_data(type_of_data='initial setup'):
              'delete' AS change_type,
             current_timestamp() AS timestamp_change
         """)
-        curso_df.coalesce(1).write.format('csv').option('header',True).option('sep',',').mode('append').save('/Volumes/dataslight_dev/bronze/landing/database')
+        curso_df.coalesce(1).write.format('csv').option('header',True).option('sep',',').mode('append').save('/Volumes/workspace/bronze/landing/database')
         print(f'O arquivo de DELETE com origem DATABASE foi criado com sucesso.')
 
 # COMMAND ----------
 
 # MAGIC %sql
-# MAGIC CREATE TABLE IF NOT EXISTS dataslight_dev.gold.dim_tempo (
+# MAGIC CREATE TABLE IF NOT EXISTS workspace.gold.dim_tempo (
 # MAGIC   sk_tempo BIGINT GENERATED BY DEFAULT AS IDENTITY,
 # MAGIC   data DATE,
 # MAGIC   ano INT,
@@ -517,7 +532,7 @@ def generate_database_data(type_of_data='initial setup'):
 # MAGIC )
 # MAGIC TBLPROPERTIES ("quality" = "gold");
 # MAGIC
-# MAGIC INSERT INTO dataslight_dev.gold.dim_tempo (
+# MAGIC INSERT INTO workspace.gold.dim_tempo (
 # MAGIC   data,
 # MAGIC   ano,
 # MAGIC   mes,
@@ -590,4 +605,4 @@ def generate_database_data(type_of_data='initial setup'):
 # MAGIC     current_timestamp() AS data_carga
 # MAGIC   from datas;
 # MAGIC
-# MAGIC -- SELECT * FROM dataslight_dev.gold.dim_tempo;
+# MAGIC -- SELECT * FROM workspace.gold.dim_tempo;

@@ -3,4 +3,4 @@ AS
     SELECT 
       *
       EXCEPT (source_file_name, _rescued_data) 
-    FROM STREAM(dataslight_dev.bronze.dados_files)
+    FROM STREAM(workspace.bronze.dados_files)

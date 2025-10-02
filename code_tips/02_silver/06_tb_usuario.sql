@@ -1,4 +1,4 @@
-CREATE OR REFRESH STREAMING LIVE TABLE dataslight_dev.silver.tb_usuario(
+CREATE OR REFRESH STREAMING LIVE TABLE workspace.silver.tb_usuario(
     CONSTRAINT check_sexo_usuario EXPECT (
         sexo_usuario IN ('M', 'F')
     ) ON VIOLATION DROP ROW,
@@ -22,7 +22,7 @@ AS
       CAST(NULL AS STRING) AS empresa_usuario,
       'API' AS origem,
       getdate() AS data_carga
-  FROM STREAM(dataslight_dev.silver.temp_tb_validacao_api)
+  FROM STREAM(workspace.silver.temp_tb_validacao_api)
   WHERE payload.info_usuario IS NOT NULL
     AND fl_registro_invalido=FALSE
 

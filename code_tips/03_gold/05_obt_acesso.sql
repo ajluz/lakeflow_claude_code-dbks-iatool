@@ -1,4 +1,4 @@
-CREATE OR REFRESH MATERIALIZED VIEW dataslight_dev.gold.obt_acesso
+CREATE OR REFRESH MATERIALIZED VIEW workspace.gold.obt_acesso
 TBLPROPERTIES ("quality" = "gold")
 AS
     SELECT 
@@ -21,6 +21,6 @@ AS
         1 AS qtde_acesso,
         CASE WHEN a.usuario_uuid IS NOT NULL THEN 1 ELSE 0 END AS qtde_usuario,
         CASE WHEN v.valor_parcelas IS NOT NULL THEN 1 ELSE 0 END AS qtde_vendidos
-    FROM dataslight_dev.silver.tb_acesso AS a
-    JOIN dataslight_dev.gold.dim_tempo AS t ON CAST(a.timestamp_acesso AS DATE) = t.data
-    LEFT JOIN dataslight_dev.silver.tb_venda v ON a.acesso_uuid = v.acesso_uuid;
+    FROM workspace.silver.tb_acesso AS a
+    JOIN workspace.gold.dim_tempo AS t ON CAST(a.timestamp_acesso AS DATE) = t.data
+    LEFT JOIN workspace.silver.tb_venda v ON a.acesso_uuid = v.acesso_uuid;

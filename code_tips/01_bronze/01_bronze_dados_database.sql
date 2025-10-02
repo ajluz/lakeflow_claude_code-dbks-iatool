@@ -1,4 +1,4 @@
-CREATE OR REFRESH STREAMING LIVE TABLE dataslight_dev.bronze.dados_database
+CREATE OR REFRESH STREAMING LIVE TABLE workspace.bronze.dados_database
 TBLPROPERTIES ("quality" = "bronze")
 AS 
   SELECT 
@@ -6,7 +6,7 @@ AS
     _metadata.file_path AS source_file_name, 
     *
   FROM cloud_files(
-    "/Volumes/dataslight_dev/bronze/landing/database/", 
+    "/Volumes/workspace/bronze/landing/database/", 
     "csv", 
     map(
       "cloudFiles.inferColumnTypes", "true",

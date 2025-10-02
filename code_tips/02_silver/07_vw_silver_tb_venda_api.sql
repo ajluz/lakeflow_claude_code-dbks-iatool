@@ -20,6 +20,6 @@ AS
       CAST((replace(substr(payload.info_produto.valor,4),',','.') * payload.info_pagamento.disconto) AS DECIMAL(9,2)) AS valor_desconto,
       'API' AS origem,
       getdate() AS data_carga
-  FROM STREAM(dataslight_dev.silver.temp_tb_validacao_api)
+  FROM STREAM(workspace.silver.temp_tb_validacao_api)
   WHERE payload.info_pagamento IS NOT NULL
     AND fl_registro_invalido=FALSE;

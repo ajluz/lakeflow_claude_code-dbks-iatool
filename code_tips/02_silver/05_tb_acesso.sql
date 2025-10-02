@@ -1,4 +1,4 @@
-CREATE OR REPLACE STREAMING LIVE TABLE dataslight_dev.silver.tb_acesso (
+CREATE OR REPLACE STREAMING LIVE TABLE workspace.silver.tb_acesso (
   CONSTRAINT check_endereco_ip_acesso EXPECT (
           endereco_ip_acesso != '999.999.999.999'
       ) ON VIOLATION DROP ROW,
@@ -35,5 +35,5 @@ CREATE OR REPLACE STREAMING LIVE TABLE dataslight_dev.silver.tb_acesso (
       md5(payload.info_produto.product_name) AS curso_uuid,
       'API' AS origem,
       getdate() AS data_carga
-    FROM STREAM(dataslight_dev.silver.temp_tb_validacao_api)
+    FROM STREAM(workspace.silver.temp_tb_validacao_api)
     WHERE fl_registro_invalido=FALSE;

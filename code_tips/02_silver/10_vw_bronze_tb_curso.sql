@@ -3,4 +3,4 @@ AS
     SELECT 
         *,
         'DATABASE' AS origem 
-    FROM STREAM(dataslight_dev.bronze.dados_database);
+    FROM STREAM(workspace.bronze.dados_database);

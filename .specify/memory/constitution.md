@@ -1,3 +1,37 @@
+<!--
+SYNC IMPACT REPORT (scratch material for review; remove before committing)
+
+Version change: 1.2.0 → 1.3.0
+Bump rationale: MINOR. Principle VI gains a named exception, the same treatment given to
+the dim_curso exception in 1.1.0. No principle removed or redefined.
+Note: 1.1.0, 1.2.0 and 1.3.0 are all uncommitted; the last committed version is 1.0.0.
+
+Modified principles:
+- VI. Record Source and Hash Keys in Silver (title unchanged): silver.tb_curso is exempt
+  from deriving a hash key because it has a single source that already delivers the
+  identifier. Record source and load timestamp still apply to it.
+- VII. Kimball Dimensional Modeling in Gold (title unchanged): the business key of
+  dim_curso is stated to be the source-delivered identifier.
+
+Other edits:
+- Development Workflow and Quality Gates: gate 4 now reads "unless exempted by
+  Principle VI".
+
+Added sections: none
+Removed sections: none
+
+Dependent templates: not modified by this command; they read the constitution at runtime.
+
+Follow-up TODOs (existing code; unchanged):
+- tb_curso is compliant with Principle VI as written: it carries origem (set in
+  vw_bronze_tb_curso) and uses the source curso_uuid as its AUTO CDC key. It has no
+  data_carga column yet.
+- All other gaps listed for 1.2.0 remain (multi-column hash expressions, acesso_uuid
+  computed two ways, no venda_uuid, no origem on tb_quarentena, no default dimension
+  members, surrogate key stability). See doc/known-issues.md.
+- No deferred placeholders.
+-->
+
 # Data's Light Academy Lakeflow Constitution
 
 ## Core Principles
@@ -13,10 +47,24 @@ Every dataset belongs to exactly one layer, and data moves only forward through 
 - **Silver** (`workspace.silver`) holds validated, typed, conformed data. All cleansing,
   casting, key derivation, validation, and merging of sources happens here.
 - **Gold** (`workspace.gold`) holds the analytics model: dimensions, facts, and
-  denormalized tables. Gold MUST read from silver or from other gold datasets. Reading
-  bronze from gold is a violation unless the Complexity Tracking section of the plan
-  justifies it.
-- A dataset MUST NOT read from a later layer, and a layer MUST NOT be skipped.
+  denormalized tables. Gold MUST read from silver or from other gold datasets, apart from
+  the exception below.
+- A dataset MUST NOT read from a later layer, and a layer MUST NOT be skipped, apart from
+  the exception below.
+- **Exception: SCD type 2 dimensions read the bronze change feed.** `gold.dim_curso` reads
+  `bronze.dados_database` directly. Its silver counterpart, `silver.tb_curso`, is an SCD
+  type 1 target: it keeps only the latest version of each course and is updated and
+  deleted in place, so it holds neither the history nor the ordered change events that
+  `AUTO CDC ... STORED AS SCD TYPE 2` needs. The exception is bounded as follows:
+  - It applies only to `gold.dim_curso`. Any other gold dataset that reads bronze requires
+    an amendment naming it here.
+  - The gold flow MUST use the same `KEYS`, `SEQUENCE BY`, and delete condition as the
+    silver flow for the same source, so that the current gold version always equals the
+    silver row.
+  - The gold flow MUST NOT apply cleansing or business rules to the bronze feed beyond
+    excluding lineage and change-control columns. If the feed needs validation, the rules
+    of Principles III and IV apply to it before it reaches gold.
+  - The bronze dependency MUST be stated in `doc/pipeline-reference.md`.
 - Every persisted table MUST carry `TBLPROPERTIES ("quality" = "<layer>")`.
 - Every dataset the pipeline reads MUST be defined in the pipeline. The only exception is
   static reference data (for example the calendar dimension), which MUST be loaded by an
@@ -140,6 +188,107 @@ The dataset type follows from the nature of the source, not from habit.
 quietly incorrect, such as an aggregate in a streaming table that never recomputes when its
 source changes.
 
+### VI. Record Source and Hash Keys in Silver
+
+Silver adopts two Data Vault practices: every row states where it came from, and every row
+is identified by a deterministic hash key. Silver is not otherwise modeled as a Data Vault;
+hubs, links, and satellites are out of scope.
+
+- **Record source.** Every silver table, quarantine tables included, MUST carry `origem`,
+  naming the source system that delivered the row (`API`, `ARQUIVO`, `DATABASE`). The value
+  MUST be a literal set by the flow that reads that source. It MUST NOT be derived from the
+  data, defaulted, or null.
+- **Load timestamp.** Every silver table MUST carry `data_carga`, the time the row was
+  loaded.
+- **Hash key.** Every conformed silver table MUST carry a hash key that identifies the row,
+  named `<entidade>_uuid` (for example `usuario_uuid`, `curso_uuid`, `venda_uuid`).
+  - The hash key MUST be computed with `md5` over the business key columns only. It MUST
+    NOT include load timestamps, random values, or any other non-deterministic input, so
+    that reprocessing the same source row yields the same key.
+  - A key built from several columns MUST cast each component to `STRING`, replace `NULL`
+    with a fixed placeholder, and join the components with a delimiter, as in
+    `md5(concat_ws('||', coalesce(cast(a AS STRING), ''), coalesce(cast(b AS STRING), '')))`.
+    Bare `concat` MUST NOT be used: it returns `NULL` when any component is null and lets
+    different keys collide.
+  - The record source is part of the business key whenever two sources can issue the same
+    identifier for different things.
+- **One definition per key.** The expression for a given hash key MUST be written once, in
+  the dataset that owns the entity or in a shared temporary view, and reused by every
+  dataset that references the entity. Recomputing the same key with a different expression
+  in another file is a violation.
+- **Uniqueness.** A hash key MUST be unique within its table. Each conformed silver table
+  MUST declare an expectation that its hash key is not null, and uniqueness
+  (`count(*) = count(DISTINCT <entidade>_uuid)`) MUST be verified before a change is
+  accepted. A table that legitimately receives the same business key more than once MUST
+  either deduplicate on the hash key or apply `AUTO CDC` keyed on it.
+- **References.** A silver table refers to another entity by that entity's hash key, under
+  the same column name.
+- The business key columns behind each hash key MUST be listed in
+  `doc/pipeline-reference.md`.
+- **Exception: `silver.tb_curso` does not derive a hash key.** The course catalog has a
+  single source, the database change feed, and that feed already delivers the course
+  identifier. No key needs to be unified across sources, so the hash key rules above
+  (derivation with `md5`, the composition rule, the not-null expectation, and the
+  uniqueness check) do not apply to this table. The exception is bounded as follows:
+  - It applies only to `silver.tb_curso`. It ends if a second source of courses is added.
+  - The table keeps the identifier delivered by the source, unchanged, as the `KEYS`
+    column of its `AUTO CDC` flow, which is what keeps one row per course.
+  - The record source and load timestamp rules still apply: `tb_curso` MUST carry `origem`
+    and `data_carga`.
+  - Other silver tables that reference a course MUST produce a value equal to the
+    identifier delivered by the source, so that they join to `tb_curso` and to
+    `gold.dim_curso`.
+
+**Rationale**: the record source makes every row traceable to its origin after sources are
+merged. A deterministic hash key gives sources with different native identifiers one
+uniform key, makes reloads idempotent, and gives gold a stable business key to join on.
+Two expressions for the same key produce joins that fail without any error.
+
+### VII. Kimball Dimensional Modeling in Gold
+
+Gold is a dimensional model built by Kimball's rules.
+
+- **Star schema.** Gold consists of fact tables (`fato_`) and dimension tables (`dim_`).
+  Dimensions MUST be denormalized; a dimension MUST NOT reference another dimension.
+- **Declared grain.** Every fact table MUST state its grain, meaning what one row
+  represents, in `doc/pipeline-reference.md` before it is built. Every row MUST be at that
+  grain, and every measure MUST be valid at that grain.
+- **Facts hold keys and measures.** A fact table contains surrogate keys to its dimensions,
+  numeric measures, and degenerate dimensions (identifiers with no attributes, such as a
+  transaction number). Descriptive attributes belong in dimensions. Each measure MUST be
+  documented as additive, semi-additive, or non-additive.
+- **Surrogate keys.** Every dimension MUST have a single-column surrogate key named
+  `sk_<dimensao>`. Facts MUST reference dimensions only through surrogate keys. The
+  surrogate key of a given dimension row MUST keep its value across pipeline updates; a
+  mechanism that reassigns keys on refresh MUST NOT be used.
+- **Business keys.** Every dimension MUST retain the silver hash key (Principle VI) as its
+  business key; for `dim_curso` this is the identifier delivered by the source. Surrogate
+  keys are resolved by joining on that key.
+- **Conformed dimensions.** A dimension shared by several facts is defined once and reused
+  unchanged. Two dimensions describing the same entity MUST NOT coexist.
+- **Date dimension.** Facts MUST reference the calendar dimension (`dim_tempo`) through its
+  surrogate key instead of storing date attributes.
+- **Slowly changing dimensions.** Every dimension MUST declare its type. Type 1 overwrites
+  in place. Type 2 keeps history through `AUTO CDC ... STORED AS SCD TYPE 2`, with one
+  surrogate key per version. A fact that references a type 2 dimension resolves the
+  version in effect when the fact event happened; resolving the current version
+  (`__END_AT IS NULL`) instead is allowed only when the plan states it and explains why.
+- **No null foreign keys.** Every dimension key in a fact MUST be populated. Each dimension
+  MUST provide explicit members for "unknown" and "not applicable", and facts point to
+  them when a lookup has no match. This is what makes the reconciliation rule of
+  Principle I achievable.
+- **Junk dimensions.** Low-cardinality flags and codes that belong to no other dimension
+  are grouped into a junk dimension (`dim_codigos`) instead of being stored on the fact or
+  given one dimension each.
+- **Derived tables.** A one-big-table (`obt_`) is a denormalized convenience for one
+  analysis. It MUST state its grain, and it MUST NOT be the only place a business measure
+  is defined.
+
+**Rationale**: a declared grain and conformed dimensions keep measures consistent across
+every query and every fact. Surrogate keys isolate the model from source key changes and
+make type 2 history possible. Default members keep row counts honest by replacing silent
+loss with an explicit "unknown".
+
 ## Platform and Technology Constraints
 
 - **Platform**: Databricks with Unity Catalog and serverless Lakeflow Spark Declarative
@@ -157,8 +306,9 @@ source changes.
   tables use the prefix `tb_`, temporary views `vw_`, private staging tables `temp_tb_`,
   dimensions `dim_`, facts `fato_`, and one-big-tables `obt_`. Flows are named
   `<layer>_<target>[_<source>]_flow`.
-- **Lineage columns**: conformed silver tables MUST carry `origem` (the source channel)
-  and `data_carga` (the load timestamp).
+- **Key and lineage columns**: hash keys end in `_uuid`, surrogate keys start with `sk_`,
+  the record source is `origem`, and the load timestamp is `data_carga`, as defined in
+  Principles VI and VII.
 - **Data**: all data is synthetic. Real personal data MUST NOT be loaded into this project.
 - **CLI**: Databricks CLI commands MUST pass an explicit `--profile`. A profile MUST NOT be
   selected on the user's behalf.
@@ -169,14 +319,18 @@ source changes.
   reference file for each feature in use MUST be consulted. When the skill and this
   constitution disagree, the constitution prevails and the disagreement is raised as an
   amendment.
-- Every feature plan MUST include a Constitution Check covering all five principles.
+- Every feature plan MUST include a Constitution Check covering every Core Principle.
   Each deviation MUST be recorded with its justification and the simpler alternative that
   was rejected.
 - A change is complete only when all of these hold:
   1. The pipeline validates and an update finishes without failed flows.
   2. The data quality tab shows every declared expectation with its metrics.
   3. Bronze, conformed, and quarantined row counts reconcile for each changed source.
-  4. `doc/pipeline-reference.md` and `doc/architecture.md` describe the changed datasets,
+  4. Every changed silver table has a populated `origem` and, unless exempted by
+     Principle VI, a unique, non-null hash key.
+  5. Every changed fact has a documented grain, no null dimension keys, and a row count
+     that reconciles with its silver source.
+  6. `doc/pipeline-reference.md` and `doc/architecture.md` describe the changed datasets,
      and `doc/known-issues.md` gains or loses entries as defects are found or fixed.
 - A full refresh destroys streaming state and reprocesses sources from the beginning. It
   MUST be explicitly approved by the user and MUST NOT be run as a routine fix.
@@ -204,4 +358,4 @@ this repository.
   `databricks-pipelines` skill gives syntax and patterns. Both inform implementation;
   neither overrides this document.
 
-**Version**: 1.0.0 | **Ratified**: 2026-10-10 | **Last Amended**: 2026-10-10
+**Version**: 1.3.0 | **Ratified**: 2026-10-10 | **Last Amended**: 2026-10-10

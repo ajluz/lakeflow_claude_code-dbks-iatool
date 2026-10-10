@@ -1,4 +1,4 @@
-
-/.databricks
-/.claude
-/.ai-dev-kit
+.databricks/
+.claude/
+.ai-dev-kit/
+.vscode/

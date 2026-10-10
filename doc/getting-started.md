@@ -1,0 +1,97 @@
+# Getting started
+
+How to run the demo end to end in a Databricks workspace. It was built for
+Databricks Free Edition, whose default catalog is `workspace`.
+
+Read [known-issues.md](known-issues.md) first: a few references in the code
+point at a different catalog and need adjusting before a clean run.
+
+## Prerequisites
+
+- A Databricks workspace with Unity Catalog and serverless pipelines
+- A catalog named `workspace`
+- Permission to create schemas, volumes, tables and pipelines in it
+
+The repository has no script that creates the schemas or the landing volume, and
+no pipeline or bundle definition. Create them by hand:
+
+```sql
+CREATE SCHEMA IF NOT EXISTS workspace.bronze;
+CREATE SCHEMA IF NOT EXISTS workspace.silver;
+CREATE SCHEMA IF NOT EXISTS workspace.gold;
+CREATE VOLUME IF NOT EXISTS workspace.bronze.landing;
+```
+
+## 1. Import the code
+
+Import the repository into the workspace as a Git folder, or upload
+[code_tips/](../code_tips/) and [explorations/](../explorations/).
+
+## 2. Generate the source data
+
+Open [explorations/user_case.ipynb](../explorations/user_case.ipynb) and run the
+**Setup** section.
+
+1. `%run "./functions"` installs `dbldatagen`, defines the generators and
+   creates `workspace.gold.dim_tempo`. Run it once per environment (see
+   [known-issues.md](known-issues.md#dim_tempo-is-reloaded-on-every-run)).
+2. In the next cell, the file and database generators are commented out. On a
+   first run, uncomment them so all three sources have data:
+
+```python
+generate_files_data(number_rows=100000)
+generate_database_data(type_of_data='initial setup')
+query = generate_api_data(number_rows=3876831, run_as_batch=True)
+```
+
+Keep `run_as_batch=True` on Free Edition. See
+[data-generation.md](data-generation.md) for what each call writes.
+
+## 3. Create and run the pipeline
+
+1. Create a new ETL pipeline (Lakeflow Spark Declarative Pipelines).
+2. Set the default catalog to `workspace`. Every table in the code is fully
+   qualified, so the default schema only affects the temporary views.
+3. Add the three folders under `code_tips/` as the pipeline's source code.
+4. Run the pipeline.
+
+The resulting graph should match
+[lakeflow_architecture.png](lakeflow_architecture.png).
+
+## 4. Explore the results
+
+The rest of `user_case.ipynb` queries each layer in turn.
+
+**Bronze** — the three raw tables, with commented filters that isolate the bad
+records each expectation targets.
+
+**Silver** — quarantine, access, user, sales and course tables. Compare row
+counts against the pipeline's data quality tab to see what each expectation
+dropped or recorded.
+
+**Gold** — dimensions, the fact table and two example business questions:
+revenue for a month by access location and discount, and the access-to-sale
+conversion rate from `obt_acesso`.
+
+## 5. Change data capture demo
+
+The notebook shows how the two `AUTO CDC` flows react to changes in the course
+catalog. After each generator call, run the pipeline again, then re-run the
+comparison cells.
+
+| Step | Call | `silver.tb_curso` (SCD 1) | `gold.dim_curso` (SCD 2) |
+|---|---|---|---|
+| Update | `generate_database_data(type_of_data='update row')` | price overwritten to 147.00 | old row closed with `__END_AT`, new row opened |
+| Delete | `generate_database_data(type_of_data='delete row')` | row removed | current row closed with `__END_AT` |
+
+`bronze.dados_database` keeps every change event in both cases.
+
+## 6. Clean up
+
+[explorations/clean_up_env.ipynb](../explorations/clean_up_env.ipynb) removes
+the landing folders and the stream checkpoint, then drops every non-temporary
+table in the `bronze`, `silver` and `gold` schemas.
+
+It is destructive and currently targets the `dataslight_dev` catalog, not
+`workspace`. Change the catalog name in the notebook before running it against
+this setup, and delete the pipeline itself from the UI.

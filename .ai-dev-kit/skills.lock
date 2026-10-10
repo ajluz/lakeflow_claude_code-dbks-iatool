@@ -1,0 +1,5 @@
+{
+  "sources": {
+    "databricks/databricks-agent-skills": {"install_method": "databricks-aitools", "cli_version": "1.11.0", "skills_release": "0.2.10", "fetched_at": "2026-10-10T18:45:51Z"}
+  }
+}

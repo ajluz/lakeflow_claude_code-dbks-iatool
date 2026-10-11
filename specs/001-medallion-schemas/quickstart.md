@@ -23,13 +23,13 @@ databricks current-user me --profile $PROFILE        # must show arthur.luz@data
 Starting state: `bronze`, `silver` and `gold` do not exist.
 
 ```bash
-databricks experimental aitools tools query setup/01_schemas_verify.sql --profile $PROFILE
+databricks experimental aitools tools query explorations/setup/01_schemas_verify.sql --profile $PROFILE
 ```
 
 Expected before setup: three `schema_existe` rows with `FAIL`, and no error.
 
 ```bash
-databricks experimental aitools tools query setup/01_schemas.sql --profile $PROFILE
+databricks experimental aitools tools query explorations/setup/01_schemas.sql --profile $PROFILE
 ```
 
 Expected: exit code 0 and a report with 12 `PASS` rows, no `FAIL` row, and no `revogado`
@@ -45,7 +45,7 @@ owned by `arthur.luz@dataslight.com.br`, each with its description.
 ## Scenario 2: access is restricted to the owner (User Story 2)
 
 ```bash
-databricks experimental aitools tools query setup/01_schemas_verify.sql --profile $PROFILE
+databricks experimental aitools tools query explorations/setup/01_schemas_verify.sql --profile $PROFILE
 ```
 
 Expected:
@@ -78,7 +78,7 @@ a permission error for each of the three schemas.
 **Second run changes nothing**
 
 ```bash
-databricks experimental aitools tools query setup/01_schemas.sql --profile $PROFILE
+databricks experimental aitools tools query explorations/setup/01_schemas.sql --profile $PROFILE
 ```
 
 Expected: exit code 0, the same 12 `PASS` rows, no `revogado` row.
@@ -88,7 +88,7 @@ Expected: exit code 0, the same 12 `PASS` rows, no `revogado` row.
 ```bash
 databricks experimental aitools tools query \
   "CREATE TABLE workspace.bronze.zz_teste_reexecucao AS SELECT 1 AS id" --profile $PROFILE
-databricks experimental aitools tools query setup/01_schemas.sql --profile $PROFILE
+databricks experimental aitools tools query explorations/setup/01_schemas.sql --profile $PROFILE
 databricks experimental aitools tools query \
   "SELECT count(*) AS linhas FROM workspace.bronze.zz_teste_reexecucao" --profile $PROFILE
 ```
@@ -107,7 +107,7 @@ changed. Use `silver`, and only while it is empty:
 
 ```bash
 databricks experimental aitools tools query "DROP SCHEMA workspace.silver" --profile $PROFILE
-databricks experimental aitools tools query setup/01_schemas.sql --profile $PROFILE
+databricks experimental aitools tools query explorations/setup/01_schemas.sql --profile $PROFILE
 ```
 
 Expected: 12 `PASS` rows; `bronze` and `gold` untouched.
@@ -117,13 +117,13 @@ Expected: 12 `PASS` rows; `bronze` and `gold` untouched.
 ```bash
 databricks experimental aitools tools query \
   "GRANT USE SCHEMA ON SCHEMA workspace.gold TO \`account users\`" --profile $PROFILE
-databricks experimental aitools tools query setup/01_schemas_verify.sql --profile $PROFILE
+databricks experimental aitools tools query explorations/setup/01_schemas_verify.sql --profile $PROFILE
 ```
 
 Expected: the `acesso_direto` row for `workspace.gold` is `FAIL` and names `account users`.
 
 ```bash
-databricks experimental aitools tools query setup/01_schemas.sql --profile $PROFILE
+databricks experimental aitools tools query explorations/setup/01_schemas.sql --profile $PROFILE
 ```
 
 Expected: one `revogado` row (`workspace.gold`, `account users`, `USE_SCHEMA`) and 12 `PASS` rows.

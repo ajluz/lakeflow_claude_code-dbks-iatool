@@ -16,7 +16,7 @@ accepts, does, returns and refuses, so that they can be written and tested again
 | Result | one result set, the verification report defined below |
 | Exit | CLI exit code is non-zero when the statement raises an error |
 
-## `setup/01_schemas.sql`
+## `explorations/setup/01_schemas.sql`
 
 **Purpose**: bring the three schemas to the compliant state defined in
 [../data-model.md](../data-model.md).
@@ -56,7 +56,7 @@ An unexpected error after the preconditions (for example a lost connection) can 
 schemas created and others not. Every step is repeatable, so the recovery is to run the
 script again; the verification script shows the current state at any time (FR-012).
 
-## `setup/01_schemas_verify.sql`
+## `explorations/setup/01_schemas_verify.sql`
 
 **Purpose**: report the current state on demand. Read-only: it creates, alters, grants and
 revokes nothing, and is safe to run in any state, including before the setup.

@@ -7,7 +7,7 @@
 -- concessões feitas no catálogo.
 --
 -- Como executar (o profile é sempre escolhido por quem executa):
---   databricks experimental aitools tools query setup/01_schemas.sql --profile <profile>
+--   databricks experimental aitools tools query explorations/setup/01_schemas.sql --profile <profile>
 --
 -- Antes de qualquer alteração o script confere três pré-condições e para com erro,
 -- sem mudar nada, se alguma falhar:
@@ -15,7 +15,7 @@
 --   P2. quem executa é arthur.luz@dataslight.com.br;
 --   P3. nenhum dos três schemas existe com outro dono.
 --
--- O resultado é o relatório de verificação, o mesmo de setup/01_schemas_verify.sql,
+-- O resultado é o relatório de verificação, o mesmo de explorations/setup/01_schemas_verify.sql,
 -- acrescido das linhas 'revogado'.
 
 BEGIN
@@ -119,7 +119,7 @@ BEGIN
     END FOR concessoes;
   END FOR camadas;
 
-  -- Relatório de verificação. Cópia idêntica de setup/01_schemas_verify.sql,
+  -- Relatório de verificação. Cópia idêntica de explorations/setup/01_schemas_verify.sql,
   -- acrescida apenas das linhas 'revogado'. Mantenha as duas cópias iguais.
   -- O information_schema já reflete os REVOKE feitos acima nesta mesma execução
   -- (verificado em 2026-10-10), então 'acesso_direto' mostra o estado final.

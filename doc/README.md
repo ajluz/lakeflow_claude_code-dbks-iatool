@@ -27,13 +27,13 @@ lakeflow/
 │   ├── 01_bronze/           Auto Loader ingestion into streaming tables
 │   ├── 02_silver/           Validation, quarantine, conformed tables, CDC (SCD 1)
 │   └── 03_gold/             Dimensions, fact table, OBT
-├── explorations/            Notebooks that drive the demo
+├── explorations/            Auxiliary code: setup, generators and notebooks
+│   ├── setup/               Environment preparation, run by hand in step order
+│   │   ├── 01_schemas.sql           Creates the schemas and applies the access rule
+│   │   └── 01_schemas_verify.sql    Read-only verification report
 │   ├── functions.py         Data generators + creation of gold.dim_tempo
 │   ├── user_case.ipynb      Walkthrough: case study, setup, queries per layer
 │   └── clean_up_env.ipynb   Drops tables and landing files
-├── setup/                   Environment preparation, run by hand in step order
-│   ├── 01_schemas.sql           Creates the schemas and applies the access rule
-│   └── 01_schemas_verify.sql    Read-only verification report
 ├── data/                    Local tooling state, no datasets
 └── doc/                     This documentation
     └── lakeflow_architecture.png   Screenshot of the pipeline graph

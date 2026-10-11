@@ -1,6 +1,6 @@
 # Implementation Plan: Medallion Schemas with Restricted Access
 
-**Branch**: `001-medallion-schemas` | **Date**: 2026-10-10 | **Spec**: [spec.md](spec.md)
+**Branch**: `001-medallion-schemas` | **Date**: 2026-10-10, revised 2026-10-11 | **Spec**: [spec.md](spec.md)
 
 **Input**: Feature specification from `/specs/001-medallion-schemas/spec.md`
 
@@ -18,6 +18,13 @@ creates each schema if missing, sets its description, grants full control to the
 and revokes any other direct grant it finds in the information schema. A second, read-only
 script returns a pass/fail verification report on demand. Access inherited from the
 catalog is reported and left unchanged.
+
+**Revisions of 2026-10-11**: the plan follows the repository layout of constitution
+v1.5.0. Code is split by purpose: `src/` for the deployed pipeline and `explorations/` for
+auxiliary code, with setup scripts in `explorations/setup/`. The scripts were implemented
+in a top-level `setup/` folder and then moved to `src/setup/` under v1.4.0; their location
+is now `explorations/setup/`. Only the location changes. No behavior, contract or
+requirement changes.
 
 ## Technical Context
 
@@ -53,7 +60,7 @@ it on 2026-10-10 and are recorded in [research.md](research.md).
 
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-Checked against constitution v1.3.0.
+Checked against constitution v1.5.0.
 
 | Principle / section | Applies | Result | Notes |
 |---|---|---|---|
@@ -66,7 +73,7 @@ Checked against constitution v1.3.0.
 | VII. Kimball Dimensional Modeling in Gold | No | N/A | No gold table is created. |
 | Constraints: catalog and schemas | Yes | PASS | One catalog, `workspace`; schemas `bronze`, `silver`, `gold`; no other catalog referenced. |
 | Constraints: landing zone | No | N/A | The `landing` volume is a later step. |
-| Constraints: repository layout | Yes | **DEVIATION** | Adds a top-level `setup/` folder that the layout rule does not list. Justified in Complexity Tracking. |
+| Constraints: repository layout | Yes | PASS | Both scripts are auxiliary code (the pipeline does not need them deployed to run) and live in `explorations/setup/`, the folder the layout rule names for initial setup. Nothing is added under `src/`. |
 | Constraints: naming | Yes | PASS | Schema names are lowercase; report columns and check names are Portuguese snake_case. |
 | Constraints: data | Yes | PASS | No data is loaded. |
 | Constraints: CLI | Yes | PASS | Every command takes `--profile`; no profile is stored in a script. |
@@ -75,12 +82,12 @@ Checked against constitution v1.3.0.
 | Workflow: completion gate 6 (documentation) | Yes | PLANNED | `doc/getting-started.md` and `doc/README.md` are updated as part of this feature (FR-014). |
 | Workflow: destructive actions need approval | Yes | PASS | The setup never drops anything. The quickstart's re-creation test drops one empty schema and is run by the owner. |
 
-**Gate result (pre-research)**: PASS with one justified deviation.
+**Gate result (pre-research)**: PASS, no deviations.
 
-**Gate result (post-design)**: PASS, unchanged. The design in [data-model.md](data-model.md)
-and [contracts/setup-and-verify.md](contracts/setup-and-verify.md) introduced no new
-deviation: it stays SQL-only, touches only the three schemas, and leaves catalog grants
-alone.
+**Gate result (post-design)**: PASS, no deviations. The design in
+[data-model.md](data-model.md) and
+[contracts/setup-and-verify.md](contracts/setup-and-verify.md) stays SQL-only, touches only
+the three schemas, leaves catalog grants alone, and places its code in `explorations/setup/`.
 
 ## Project Structure
 
@@ -102,30 +109,51 @@ specs/001-medallion-schemas/
 ### Source Code (repository root)
 
 ```text
-setup/                          # NEW: environment preparation, run by hand, in step order
-├── 01_schemas.sql              # NEW: creates the schemas and applies the access rule
-└── 01_schemas_verify.sql       # NEW: read-only verification report
+explorations/                   # auxiliary code
+├── setup/                      # initial environment setup, run by hand, in step order
+│   ├── 01_schemas.sql          # creates the schemas and applies the access rule
+│   └── 01_schemas_verify.sql   # read-only verification report
+├── functions.py                # unchanged
+├── user_case.ipynb             # unchanged
+└── clean_up_env.ipynb          # unchanged
+
+src/                            # project code (the pipeline); nothing from this feature
 
 doc/
-├── getting-started.md          # CHANGED: prerequisites point to setup/ instead of manual SQL
-└── README.md                   # CHANGED: repository layout lists setup/
+├── getting-started.md          # prerequisites point to explorations/setup/
+└── README.md                   # repository layout lists explorations/setup/
 
-explorations/                   # unchanged
 databricks.yml                  # unchanged
 ```
 
-**Structure Decision**: a new top-level `setup/` folder holds environment preparation
-scripts, numbered by project step. It is separate from pipeline source so that a pipeline
-pointed at its source folder never picks these files up, and separate from `explorations/`
-because it is required, not exploratory. Later steps (landing volume, calendar table) can
-be added as `02_`, `03_`.
+**Structure Decision**: the schema scripts are auxiliary code and live in
+`explorations/setup/`, numbered by project step, as the constitution's repository layout
+prescribes. `src/` is reserved for the deployed pipeline, so this feature adds nothing
+there. Later setup steps (landing volume, calendar table) can be added as `02_`, `03_`.
+
+**Relocation of what is already built**: the two scripts are today in `src/setup/`.
+Bringing the feature into compliance means:
+
+1. move `src/setup/01_schemas.sql` and `src/setup/01_schemas_verify.sql` to
+   `explorations/setup/` with `git mv`, content unchanged, and remove the empty
+   `src/setup/` folder (and `src/`, if nothing else is in it);
+2. update the run commands in the header comments of both scripts;
+3. update the paths in `doc/getting-started.md` and `doc/README.md`;
+4. run the verification script from its new path and confirm 12 `PASS` rows.
+
+Nothing changes in the workspace: the schemas already exist and are compliant.
+
+**Out of scope**: `doc/` still describes `code_tips/`, which is no longer in the
+repository. That does not belong to this feature.
 
 ## Design Notes for Implementation
 
 These carry the decisions of [research.md](research.md) into the task phase.
 
-- **One statement per file.** Each script is a single compound statement so that it runs
-  the same way from the CLI and the SQL editor.
+- **One statement per file.** The setup script is a single compound statement and the
+  verify script is a single `WITH ... SELECT` query, so each runs the same way from the
+  CLI and the SQL editor. A plain query cannot change anything, which makes the verify
+  script read-only by construction.
 - **Constants first.** The catalog, the three schema names with their descriptions, and
   the authorized principal are declared once at the top of each script.
 - **Check, then change.** All three preconditions of the contract are evaluated for all
@@ -137,21 +165,18 @@ These carry the decisions of [research.md](research.md) into the task phase.
 - **Shared report logic.** The verification query is the last step of the setup script and
   the whole of the verify script. Keep the two copies identical; the setup adds only the
   `revogado` rows.
-- **Not verified yet.** Whether `information_schema` reflects a `REVOKE` immediately within
-  the same compound statement was not tested, because research was read-only. If the
-  final report of the setup still shows a just-revoked grant, the fix is to build the
-  `acesso_direto` rows from the state computed in the script, or to rely on the separate
-  verify run.
+- **Confirmed in implementation.** The information schema reflects a `REVOKE` within the
+  same compound statement, so the setup's final report shows the state after revoking.
+- **String literals.** Spark SQL does not treat `''` as an escaped quote; dynamic
+  statements that embed text use double-quoted literals around the single quotes.
+- **Test principal.** A stray grant for testing goes to `account users`. The
+  workspace-local `users` group is not a Unity Catalog principal and the system
+  workspace-users group cannot receive schema grants.
 
 ## Complexity Tracking
 
 > **Fill ONLY if Constitution Check has violations that must be justified**
 
-| Violation | Why Needed | Simpler Alternative Rejected Because |
-|-----------|------------|-------------------------------------|
-| New top-level folder `setup/`, not listed in the constitution's "Repository layout" constraint | Schema creation is neither pipeline source nor exploration, and it must exist before either can run | Putting the scripts in `code_tips/` would make the pipeline try to execute them as dataset definitions; putting them in `explorations/` hides a mandatory step among optional notebooks; keeping manual SQL in the documentation fails FR-007, FR-009 and FR-013 |
-
-**Recommended follow-up**: amend the constitution's "Repository layout" bullet to add
-`setup/` for environment preparation scripts (a PATCH or MINOR amendment through
-`/speckit-constitution`). The same bullet still names `code_tips/`, which is no longer in
-the repository; that is outside this feature but worth settling in the same amendment.
+No violations. The deviation recorded in the first version of this plan (a top-level
+`setup/` folder not listed in the repository layout) no longer applies: constitution
+v1.5.0 names `explorations/setup/` for these scripts.

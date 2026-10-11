@@ -1,6 +1,6 @@
 # Research: Medallion Schemas with Restricted Access
 
-**Feature**: [spec.md](spec.md) | **Date**: 2026-10-10
+**Feature**: [spec.md](spec.md) | **Date**: 2026-10-10, revised 2026-10-11
 
 Findings marked *observed* were read from the target environment on 2026-10-10 with
 read-only queries (profile `databricks-free`, host `dbc-7e0f02e0-ff06`). Nothing was
@@ -20,7 +20,7 @@ changed there.
 
 ## Decision 1: how the schemas are created
 
-**Decision**: one idempotent SQL script, `setup/01_schemas.sql`, written as a single SQL
+**Decision**: one idempotent SQL script, `explorations/setup/01_schemas.sql`, written as a single SQL
 scripting compound statement and run on the SQL warehouse.
 
 **Rationale**:
@@ -122,7 +122,7 @@ catalog and metastore it ran against.
 
 ## Decision 5: verification
 
-**Decision**: a second, read-only script, `setup/01_schemas_verify.sql`, returns one row
+**Decision**: a second, read-only script, `explorations/setup/01_schemas_verify.sql`, returns one row
 per check with a `PASS` / `FAIL` / `INFO` result. It can be run at any time (FR-013). The
 setup script ends by returning the same report.
 
@@ -151,17 +151,31 @@ this is a one-line change if the owner prefers it.
 
 ## Decision 7: where the files live
 
-**Decision**: a new top-level folder `setup/`, with files prefixed by step number
+**Decision**: the folder `explorations/setup/`, with files prefixed by step number
 (`01_schemas.sql`, `01_schemas_verify.sql`).
 
-**Rationale**: environment preparation is neither pipeline source (`code_tips/`) nor
-exploration (`explorations/`). Putting it in the pipeline folder would make the pipeline
-try to run it. Later steps (landing volume, calendar table) have the same nature and can
-follow as `02_`, `03_`.
+**Rationale**: constitution v1.5.0 splits code by purpose. `src/` holds what is deployed
+and run as the product, which is the pipeline; `explorations/` holds all auxiliary code,
+and names `explorations/setup/` for the initial environment setup. The schema scripts are
+auxiliary by the constitution's own test: the pipeline does not need them deployed in
+order to run. Later steps (landing volume, calendar table) can follow as `02_`, `03_`.
 
-**Constitution impact**: the "Repository layout" constraint lists `code_tips/`,
-`explorations/` and `doc/` and does not mention `setup/`. This is recorded in the plan's
-Complexity Tracking, with a recommended amendment.
+**History**: the location changed twice as the layout rule was settled.
+
+| Date | Constitution | Location | Status |
+|---|---|---|---|
+| 2026-10-10 | v1.3.0 | `setup/` | implemented and validated; recorded as a deviation |
+| 2026-10-11 | v1.4.0 (all code under `src/`) | `src/setup/` | files moved, verified |
+| 2026-10-11 | v1.5.0 (`src/` for the pipeline, `explorations/` for auxiliary code) | `explorations/setup/` | this revision |
+
+The content of the scripts did not change in any of these moves.
+
+**Alternatives considered**:
+- *Leave the scripts in `src/setup/`*. Rejected: v1.5.0 forbids auxiliary code under
+  `src/`.
+- *Put them directly in `explorations/`, beside the notebooks*. Rejected: the constitution
+  names `explorations/setup/`, and a subfolder keeps mandatory, ordered steps apart from
+  optional notebooks.
 
 ## Open questions
 

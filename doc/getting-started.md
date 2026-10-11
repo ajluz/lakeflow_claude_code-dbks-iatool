@@ -20,8 +20,8 @@ identity with access, never drops anything, and refuses to run as anyone else.
 Choose your CLI profile and pass it explicitly:
 
 ```bash
-databricks experimental aitools tools query setup/01_schemas.sql --profile <profile>
-databricks experimental aitools tools query setup/01_schemas_verify.sql --profile <profile>
+databricks experimental aitools tools query explorations/setup/01_schemas.sql --profile <profile>
+databricks experimental aitools tools query explorations/setup/01_schemas_verify.sql --profile <profile>
 ```
 
 Both commands print the same verification report. The environment is ready when

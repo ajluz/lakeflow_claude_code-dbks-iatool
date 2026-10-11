@@ -5,12 +5,12 @@
 -- concede nem revoga nada, e pode ser executado em qualquer estado do ambiente.
 --
 -- Como executar (o profile é sempre escolhido por quem executa):
---   databricks experimental aitools tools query setup/01_schemas_verify.sql --profile <profile>
+--   databricks experimental aitools tools query explorations/setup/01_schemas_verify.sql --profile <profile>
 --
 -- O ambiente está em conformidade quando o relatório não tem nenhuma linha FAIL.
 -- Em um ambiente recém-configurado são 12 linhas PASS (4 verificações x 3 schemas).
 --
--- ATENÇÃO: esta consulta é repetida, idêntica, no final de setup/01_schemas.sql,
+-- ATENÇÃO: esta consulta é repetida, idêntica, no final de explorations/setup/01_schemas.sql,
 -- que acrescenta apenas as linhas 'revogado'. Mantenha as duas cópias iguais.
 
 WITH constantes AS (

@@ -1,34 +1,38 @@
 <!--
 SYNC IMPACT REPORT (scratch material for review; remove before committing)
 
-Version change: 1.2.0 → 1.3.0
-Bump rationale: MINOR. Principle VI gains a named exception, the same treatment given to
-the dim_curso exception in 1.1.0. No principle removed or redefined.
-Note: 1.1.0, 1.2.0 and 1.3.0 are all uncommitted; the last committed version is 1.0.0.
+Version change: 1.4.0 → 1.5.0
+Bump rationale: MINOR. The "Repository layout" constraint is redefined: v1.4.0 put all
+code under src/; v1.5.0 splits code into project code (src/) and auxiliary code
+(explorations/). This reverses part of v1.4.0, but it changes a constraint, not a Core
+Principle, and no principle is removed or redefined, so it is not MAJOR.
 
 Modified principles:
-- VI. Record Source and Hash Keys in Silver (title unchanged): silver.tb_curso is exempt
-  from deriving a hash key because it has a single source that already delivers the
-  identifier. Record source and load timestamp still apply to it.
-- VII. Kimball Dimensional Modeling in Gold (title unchanged): the business key of
-  dim_curso is stated to be the source-delivered identifier.
+- II. SQL-Only Declarative Pipelines (title unchanged): the folder for generators and
+  exploration is `explorations/` again (was `src/explorations/` in v1.4.0). No rule
+  changed.
 
-Other edits:
-- Development Workflow and Quality Gates: gate 4 now reads "unless exempted by
-  Principle VI".
+Modified sections:
+- Platform and Technology Constraints, "Repository layout": `src/` now holds only project
+  code (the pipeline, in `src/pipeline/`); the top-level `explorations/` holds all
+  auxiliary code, including initial setup in `explorations/setup/`. `src/setup/` and
+  `src/explorations/` are no longer valid locations. A test is given for telling the two
+  kinds apart.
 
 Added sections: none
 Removed sections: none
 
 Dependent templates: not modified by this command; they read the constitution at runtime.
 
-Follow-up TODOs (existing code; unchanged):
-- tb_curso is compliant with Principle VI as written: it carries origem (set in
-  vw_bronze_tb_curso) and uses the source curso_uuid as its AUTO CDC key. It has no
-  data_carga column yet.
-- All other gaps listed for 1.2.0 remain (multi-column hash expressions, acesso_uuid
-  computed two ways, no venda_uuid, no origem on tb_quarentena, no default dimension
-  members, surrogate key stability). See doc/known-issues.md.
+Follow-up TODOs (existing files that do not comply; nothing was moved):
+- `src/setup/01_schemas.sql` and `src/setup/01_schemas_verify.sql` belong in
+  `explorations/setup/`. They were moved to `src/setup/` on 2026-10-11 to satisfy v1.4.0.
+  Their header comments, `doc/getting-started.md`, `doc/README.md`, and the plan,
+  research, quickstart, contract and tasks of `specs/001-medallion-schemas/` reference
+  `src/setup/`.
+- `explorations/` (functions.py, user_case.ipynb, clean_up_env.ipynb) is already where
+  this version requires; the v1.4.0 follow-up to move it is cancelled.
+- `doc/` still describes `code_tips/`; future pipeline SQL goes to `src/pipeline/`.
 - No deferred placeholders.
 -->
 
@@ -299,9 +303,23 @@ loss with an explicit "unknown".
   other catalog is a violation.
 - **Landing zone**: source files arrive in the volume `workspace.bronze.landing`, one
   folder per source. Pipeline code MUST NOT write to the landing volume.
-- **Repository layout**: pipeline SQL lives in `code_tips/` under `01_bronze/`,
-  `02_silver/`, and `03_gold/`. Generators and exploration notebooks live in
-  `explorations/`. Documentation lives in `doc/`.
+- **Repository layout**: code is split by purpose into two top-level folders. Code MUST
+  NOT be created at the repository root or in any other top-level folder.
+  - `src/` holds the project's own code, meaning what is deployed and run as the product:
+    the pipeline SQL, in `src/pipeline/` under `01_bronze/`, `02_silver/`, and `03_gold/`.
+    The pipeline's source path points to `src/pipeline/` and nowhere else. A new kind of
+    project code gets a new subfolder of `src/`, named in the feature's plan.
+  - `explorations/` holds all auxiliary code, meaning anything that supports the project
+    without being part of the deployed pipeline: exploration notebooks, data generators,
+    clean-up notebooks, and the initial environment setup. Setup scripts live in
+    `explorations/setup/`, numbered in the order they run.
+  - Auxiliary code MUST NOT be placed under `src/`, and project code MUST NOT be placed
+    under `explorations/`. When it is unclear which kind a file is, the test is whether
+    the pipeline needs the file to be deployed in order to run: if not, it is auxiliary.
+  - Outside both folders: documentation lives in `doc/`, specifications in `specs/`, and
+    configuration files that a tool requires at the repository root (`databricks.yml`,
+    `pyproject.toml`, `uv.lock`, `.gitignore`) stay at the root. These are not code for the
+    purposes of this rule.
 - **Naming**: object and column names are in Portuguese, lowercase snake_case. Silver
   tables use the prefix `tb_`, temporary views `vw_`, private staging tables `temp_tb_`,
   dimensions `dim_`, facts `fato_`, and one-big-tables `obt_`. Flows are named
@@ -358,4 +376,4 @@ this repository.
   `databricks-pipelines` skill gives syntax and patterns. Both inform implementation;
   neither overrides this document.
 
-**Version**: 1.3.0 | **Ratified**: 2026-10-10 | **Last Amended**: 2026-10-10
+**Version**: 1.5.0 | **Ratified**: 2026-10-10 | **Last Amended**: 2026-10-11

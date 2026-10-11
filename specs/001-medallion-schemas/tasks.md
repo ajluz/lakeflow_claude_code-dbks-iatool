@@ -46,8 +46,8 @@ runs the matching scenario of quickstart.md against the workspace.
 
 **Purpose**: create the folder and the two script files
 
-- [ ] T001 Create the folder `setup/` and the file `setup/01_schemas_verify.sql` containing a header comment (purpose: read-only verification report for feature 001; how to run it; that it changes nothing) and an empty compound statement that declares the constants `v_catalogo = 'workspace'` and `v_dono = 'arthur.luz@dataslight.com.br'`
-- [ ] T002 [P] Create the file `setup/01_schemas.sql` containing a header comment (purpose: creates the bronze, silver and gold schemas and applies the access rule for feature 001; how to run it; that it never drops anything and can be run again) and an empty compound statement that declares the same constants `v_catalogo` and `v_dono`
+- [X] T001 Create the folder `setup/` and the file `setup/01_schemas_verify.sql` containing a header comment (purpose: read-only verification report for feature 001; how to run it; that it changes nothing) and an empty compound statement that declares the constants `v_catalogo = 'workspace'` and `v_dono = 'arthur.luz@dataslight.com.br'`
+- [X] T002 [P] Create the file `setup/01_schemas.sql` containing a header comment (purpose: creates the bronze, silver and gold schemas and applies the access rule for feature 001; how to run it; that it never drops anything and can be run again) and an empty compound statement that declares the same constants `v_catalogo` and `v_dono`
 
 ---
 
@@ -57,10 +57,10 @@ runs the matching scenario of quickstart.md against the workspace.
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T003 In `setup/01_schemas_verify.sql`, build the report as one final `SELECT` over a `UNION ALL` of check rows with the columns `ordem`, `verificacao`, `objeto`, `resultado`, `detalhe`, ordered by `ordem`; add the first row `verificacao = 'alvo'`, `objeto = 'workspace'`, `resultado = 'INFO'`, `detalhe` = `current_user()`, `current_catalog()` and `current_metastore()` concatenated with labels
-- [ ] T004 In `setup/01_schemas.sql`, add precondition P1: if `SELECT count(*) FROM system.information_schema.catalogs WHERE catalog_name = 'workspace'` is 0, raise `SIGNAL SQLSTATE '45000'` with a message containing `catalog workspace not found`
-- [ ] T005 In `setup/01_schemas.sql`, add precondition P2 after P1: if `current_user()` differs from `v_dono`, raise `SIGNAL SQLSTATE '45000'` with a message containing `must be run as arthur.luz@dataslight.com.br` followed by the actual `current_user()`
-- [ ] T006 Run `setup/01_schemas_verify.sql` against the workspace and confirm it returns one `alvo` row showing `arthur.luz@dataslight.com.br`, catalog `workspace` and a metastore id, with exit code 0
+- [X] T003 In `setup/01_schemas_verify.sql`, build the report as one final `SELECT` over a `UNION ALL` of check rows with the columns `ordem`, `verificacao`, `objeto`, `resultado`, `detalhe`, ordered by `ordem`; add the first row `verificacao = 'alvo'`, `objeto = 'workspace'`, `resultado = 'INFO'`, `detalhe` = `current_user()`, `current_catalog()` and `current_metastore()` concatenated with labels
+- [X] T004 In `setup/01_schemas.sql`, add precondition P1: if `SELECT count(*) FROM system.information_schema.catalogs WHERE catalog_name = 'workspace'` is 0, raise `SIGNAL SQLSTATE '45000'` with a message containing `catalog workspace not found`
+- [X] T005 In `setup/01_schemas.sql`, add precondition P2 after P1: if `current_user()` differs from `v_dono`, raise `SIGNAL SQLSTATE '45000'` with a message containing `must be run as arthur.luz@dataslight.com.br` followed by the actual `current_user()`
+- [X] T006 Run `setup/01_schemas_verify.sql` against the workspace and confirm it returns one `alvo` row showing `arthur.luz@dataslight.com.br`, catalog `workspace` and a metastore id, with exit code 0
 
 **Checkpoint**: both scripts run; the report shape and the guard rails exist
 
@@ -74,12 +74,12 @@ runs the matching scenario of quickstart.md against the workspace.
 
 ### Implementation for User Story 1
 
-- [ ] T007 [US1] In `setup/01_schemas_verify.sql`, add three `schema_existe` rows, one per schema, with `objeto = 'workspace.<schema>'`: `PASS` when the schema appears in `workspace.information_schema.schemata`, otherwise `FAIL` with `detalhe = 'schema não existe'`; a missing schema must produce a `FAIL` row and never an error
-- [ ] T008 [US1] In `setup/01_schemas_verify.sql`, add three `descricao` rows comparing `schemata.comment` with the expected text: bronze = `Camada bronze: dados brutos, exatamente como chegaram da origem.`; silver = `Camada silver: dados validados, tipados e conformados.`; gold = `Camada gold: modelo analítico (dimensões, fatos e tabelas desnormalizadas).`; `PASS` on an exact match, otherwise `FAIL` with the observed comment and the expected one in `detalhe`
-- [ ] T009 [US1] In `setup/01_schemas.sql`, add precondition P3 after P2 and before any change: for each of the three schemas that already exists in `workspace.information_schema.schemata` with `schema_owner` different from `v_dono`, collect `schema <name> is owned by <owner>`; if any was collected, raise `SIGNAL SQLSTATE '45000'` with all collected messages; all three schemas must be checked before the first `CREATE`
-- [ ] T010 [US1] In `setup/01_schemas.sql`, after the preconditions and in the order bronze, silver, gold, run `CREATE SCHEMA IF NOT EXISTS workspace.<schema>` followed by `COMMENT ON SCHEMA workspace.<schema> IS '<text>'` with the three descriptions quoted in T008, so the description is re-applied on every run; the script must contain no `DROP` statement and must reference no schema other than these three
-- [ ] T011 [US1] In `setup/01_schemas.sql`, make the last step return the verification report by repeating the report query of `setup/01_schemas_verify.sql` verbatim (rows `alvo`, `schema_existe`, `descricao`), and add a comment in both files stating that the two copies must be kept identical
-- [ ] T012 [US1] Run quickstart.md Scenario 1: run `setup/01_schemas_verify.sql` (expect three `schema_existe` rows with `FAIL` and no error), run `setup/01_schemas.sql` (expect exit code 0), then run `databricks schemas list workspace --profile <profile>` and confirm `bronze`, `silver`, `gold` exist with their descriptions and that `default` and `information_schema` are unchanged
+- [X] T007 [US1] In `setup/01_schemas_verify.sql`, add three `schema_existe` rows, one per schema, with `objeto = 'workspace.<schema>'`: `PASS` when the schema appears in `workspace.information_schema.schemata`, otherwise `FAIL` with `detalhe = 'schema não existe'`; a missing schema must produce a `FAIL` row and never an error
+- [X] T008 [US1] In `setup/01_schemas_verify.sql`, add three `descricao` rows comparing `schemata.comment` with the expected text: bronze = `Camada bronze: dados brutos, exatamente como chegaram da origem.`; silver = `Camada silver: dados validados, tipados e conformados.`; gold = `Camada gold: modelo analítico (dimensões, fatos e tabelas desnormalizadas).`; `PASS` on an exact match, otherwise `FAIL` with the observed comment and the expected one in `detalhe`
+- [X] T009 [US1] In `setup/01_schemas.sql`, add precondition P3 after P2 and before any change: for each of the three schemas that already exists in `workspace.information_schema.schemata` with `schema_owner` different from `v_dono`, collect `schema <name> is owned by <owner>`; if any was collected, raise `SIGNAL SQLSTATE '45000'` with all collected messages; all three schemas must be checked before the first `CREATE`
+- [X] T010 [US1] In `setup/01_schemas.sql`, after the preconditions and in the order bronze, silver, gold, run `CREATE SCHEMA IF NOT EXISTS workspace.<schema>` followed by `COMMENT ON SCHEMA workspace.<schema> IS '<text>'` with the three descriptions quoted in T008, so the description is re-applied on every run; the script must contain no `DROP` statement and must reference no schema other than these three
+- [X] T011 [US1] In `setup/01_schemas.sql`, make the last step return the verification report by repeating the report query of `setup/01_schemas_verify.sql` verbatim (rows `alvo`, `schema_existe`, `descricao`), and add a comment in both files stating that the two copies must be kept identical
+- [X] T012 [US1] Run quickstart.md Scenario 1: run `setup/01_schemas_verify.sql` (expect three `schema_existe` rows with `FAIL` and no error), run `setup/01_schemas.sql` (expect exit code 0), then run `databricks schemas list workspace --profile <profile>` and confirm `bronze`, `silver`, `gold` exist with their descriptions and that `default` and `information_schema` are unchanged
 
 **Checkpoint**: User Story 1 is functional; the three schemas exist and are described
 
@@ -93,13 +93,13 @@ runs the matching scenario of quickstart.md against the workspace.
 
 ### Implementation for User Story 2
 
-- [ ] T013 [US2] In `setup/01_schemas_verify.sql`, add three `dono` rows: `PASS` when `schemata.schema_owner` equals `v_dono`, otherwise `FAIL` with the observed owner in `detalhe`; when the schema does not exist the row is `FAIL` with `detalhe = 'schema não existe'`
-- [ ] T014 [US2] In `setup/01_schemas_verify.sql`, add three `acesso_direto` rows from `workspace.information_schema.schema_privileges` filtered to `inherited_from = 'NONE'`: `PASS` when the distinct grantees of the schema are exactly `v_dono`, otherwise `FAIL`; `detalhe` lists each grantee with its privileges, and for `FAIL` states that only `arthur.luz@dataslight.com.br` is expected
-- [ ] T015 [US2] In `setup/01_schemas_verify.sql`, add `acesso_herdado` rows, one per grantee and privilege, from `workspace.information_schema.schema_privileges` where `inherited_from <> 'NONE'` for the three schemas, plus one per row of `workspace.information_schema.catalog_privileges`; exclude rows whose grantee is `v_dono`; `resultado` is `INFO` when the privilege is `USE_CATALOG` or `BROWSE` (no access to schema contents) and `FAIL` for any other privilege; `detalhe` names the grantee, the privilege and where it is inherited from
-- [ ] T016 [US2] In `setup/01_schemas_verify.sql`, add one `dono_catalogo` row with `resultado = 'INFO'`, `objeto = 'workspace'` and `detalhe` giving the catalog owner from `system.information_schema.catalogs` and the sentence that members of this owner can manage the schemas by platform design
-- [ ] T017 [US2] In `setup/01_schemas.sql`, after the `COMMENT` of each schema, run `GRANT ALL PRIVILEGES ON SCHEMA workspace.<schema> TO` the authorized principal quoted with backticks, so that "exactly one direct grant set: `ALL PRIVILEGES` to the authorized principal" (data-model.md rule R2) holds; the script must contain no `GRANT` or `REVOKE` on the catalog
-- [ ] T018 [US2] In `setup/01_schemas.sql`, update the final report copy to match `setup/01_schemas_verify.sql` after T013 to T016 (rows `dono`, `acesso_direto`, `acesso_herdado`, `dono_catalogo`)
-- [ ] T019 [US2] Run quickstart.md Scenario 2: run `setup/01_schemas.sql`, confirm the report has 12 `PASS` rows (4 checks × 3 schemas) and no `FAIL` row, confirm `acesso_herdado` shows `USE_CATALOG` for the workspace users group as `INFO`, then create and drop the table `zz_teste_acesso (id INT)` in each of the three schemas and confirm every statement succeeds
+- [X] T013 [US2] In `setup/01_schemas_verify.sql`, add three `dono` rows: `PASS` when `schemata.schema_owner` equals `v_dono`, otherwise `FAIL` with the observed owner in `detalhe`; when the schema does not exist the row is `FAIL` with `detalhe = 'schema não existe'`
+- [X] T014 [US2] In `setup/01_schemas_verify.sql`, add three `acesso_direto` rows from `workspace.information_schema.schema_privileges` filtered to `inherited_from = 'NONE'`: `PASS` when the distinct grantees of the schema are exactly `v_dono`, otherwise `FAIL`; `detalhe` lists each grantee with its privileges, and for `FAIL` states that only `arthur.luz@dataslight.com.br` is expected
+- [X] T015 [US2] In `setup/01_schemas_verify.sql`, add `acesso_herdado` rows, one per grantee and privilege, from `workspace.information_schema.schema_privileges` where `inherited_from <> 'NONE'` for the three schemas, plus one per row of `workspace.information_schema.catalog_privileges`; exclude rows whose grantee is `v_dono`; `resultado` is `INFO` when the privilege is `USE_CATALOG` or `BROWSE` (no access to schema contents) and `FAIL` for any other privilege; `detalhe` names the grantee, the privilege and where it is inherited from
+- [X] T016 [US2] In `setup/01_schemas_verify.sql`, add one `dono_catalogo` row with `resultado = 'INFO'`, `objeto = 'workspace'` and `detalhe` giving the catalog owner from `system.information_schema.catalogs` and the sentence that members of this owner can manage the schemas by platform design
+- [X] T017 [US2] In `setup/01_schemas.sql`, after the `COMMENT` of each schema, run `GRANT ALL PRIVILEGES ON SCHEMA workspace.<schema> TO` the authorized principal quoted with backticks, so that "exactly one direct grant set: `ALL PRIVILEGES` to the authorized principal" (data-model.md rule R2) holds; the script must contain no `GRANT` or `REVOKE` on the catalog
+- [X] T018 [US2] In `setup/01_schemas.sql`, update the final report copy to match `setup/01_schemas_verify.sql` after T013 to T016 (rows `dono`, `acesso_direto`, `acesso_herdado`, `dono_catalogo`)
+- [X] T019 [US2] Run quickstart.md Scenario 2: run `setup/01_schemas.sql`, confirm the report has 12 `PASS` rows (4 checks × 3 schemas) and no `FAIL` row, confirm `acesso_herdado` shows `USE_CATALOG` for the workspace users group as `INFO`, then create and drop the table `zz_teste_acesso (id INT)` in each of the three schemas and confirm every statement succeeds
 
 **Checkpoint**: User Stories 1 and 2 both work; access is restricted and verifiable
 
@@ -113,11 +113,11 @@ runs the matching scenario of quickstart.md against the workspace.
 
 ### Implementation for User Story 3
 
-- [ ] T020 [US3] In `setup/01_schemas.sql`, after the `GRANT` of each schema, loop with `FOR ... DO` over the rows of `workspace.information_schema.schema_privileges` for that schema where `inherited_from = 'NONE'` and `grantee <> v_dono`, and for each run `EXECUTE IMMEDIATE` of `REVOKE <privilege> ON SCHEMA workspace.<schema> FROM` the grantee quoted with backticks, converting the `privilege_type` value to its SQL keyword form (underscores to spaces); record each revoked schema, grantee and privilege in a variable or temporary structure for the report
-- [ ] T021 [US3] In `setup/01_schemas.sql`, add `revogado` rows to the final report, one per privilege revoked in this run, with `resultado = 'INFO'`, `objeto = 'workspace.<schema>'` and `detalhe` naming the grantee and the privilege; a run that revokes nothing adds no such row
-- [ ] T022 [US3] Grant `USE SCHEMA ON SCHEMA workspace.gold` to the group `users`, run `setup/01_schemas.sql`, and check whether the `acesso_direto` row for `workspace.gold` in the script's own final report is `PASS`; if it still shows the revoked grant, change `setup/01_schemas.sql` so the `acesso_direto` rows exclude the grants revoked in this run, and record the finding as a comment at the top of the file
-- [ ] T023 [US3] Run quickstart.md Scenario 3 in full: second run changes nothing (12 `PASS`, no `revogado`); create `workspace.bronze.zz_teste_reexecucao` with one row, run the setup, confirm the row count is 1, then drop the test table; with the owner's approval drop the empty schema `workspace.silver`, run the setup, and confirm 12 `PASS` rows; grant `USE SCHEMA` on `workspace.gold` to `users`, confirm `setup/01_schemas_verify.sql` reports `FAIL` naming `users`, run the setup, and confirm one `revogado` row and 12 `PASS` rows
-- [ ] T024 [US3] Review `setup/01_schemas.sql` against the refusal cases of quickstart.md Scenario 4 that cannot be provoked with a single user: confirm by reading the script that P2 raises before any change when `current_user()` is another identity, and that P3 raises naming schema and owner before any change when a schema has a different owner
+- [X] T020 [US3] In `setup/01_schemas.sql`, after the `GRANT` of each schema, loop with `FOR ... DO` over the rows of `workspace.information_schema.schema_privileges` for that schema where `inherited_from = 'NONE'` and `grantee <> v_dono`, and for each run `EXECUTE IMMEDIATE` of `REVOKE <privilege> ON SCHEMA workspace.<schema> FROM` the grantee quoted with backticks, converting the `privilege_type` value to its SQL keyword form (underscores to spaces); record each revoked schema, grantee and privilege in a variable or temporary structure for the report
+- [X] T021 [US3] In `setup/01_schemas.sql`, add `revogado` rows to the final report, one per privilege revoked in this run, with `resultado = 'INFO'`, `objeto = 'workspace.<schema>'` and `detalhe` naming the grantee and the privilege; a run that revokes nothing adds no such row
+- [X] T022 [US3] Grant `USE SCHEMA ON SCHEMA workspace.gold` to the group `account users`, run `setup/01_schemas.sql`, and check whether the `acesso_direto` row for `workspace.gold` in the script's own final report is `PASS`; if it still shows the revoked grant, change `setup/01_schemas.sql` so the `acesso_direto` rows exclude the grants revoked in this run, and record the finding as a comment at the top of the file
+- [X] T023 [US3] Run quickstart.md Scenario 3 in full: second run changes nothing (12 `PASS`, no `revogado`); create `workspace.bronze.zz_teste_reexecucao` with one row, run the setup, confirm the row count is 1, then drop the test table; with the owner's approval drop the empty schema `workspace.silver`, run the setup, and confirm 12 `PASS` rows; grant `USE SCHEMA` on `workspace.gold` to `account users`, confirm `setup/01_schemas_verify.sql` reports `FAIL` naming `account users`, run the setup, and confirm one `revogado` row and 12 `PASS` rows
+- [X] T024 [US3] Review `setup/01_schemas.sql` against the refusal cases of quickstart.md Scenario 4 that cannot be provoked with a single user: confirm by reading the script that P2 raises before any change when `current_user()` is another identity, and that P3 raises naming schema and owner before any change when a schema has a different owner
 
 **Checkpoint**: all three user stories work; the setup is repeatable
 
@@ -127,10 +127,10 @@ runs the matching scenario of quickstart.md against the workspace.
 
 **Purpose**: documentation required by FR-014 and the final validation
 
-- [ ] T025 [P] In `doc/getting-started.md`, replace the Prerequisites paragraph that says the repository has no script and the `CREATE SCHEMA` lines of its SQL block with instructions to run `setup/01_schemas.sql` and then `setup/01_schemas_verify.sql` with an explicit `--profile`, stating that the report must contain no `FAIL` row; keep the `CREATE VOLUME IF NOT EXISTS workspace.bronze.landing` statement as a separate manual step, since the volume is out of scope for this feature
-- [ ] T026 [P] In `doc/README.md`, add `setup/` to the repository layout tree with the two files and a one-line description of each (`01_schemas.sql`: creates the schemas and applies the access rule; `01_schemas_verify.sql`: read-only verification report)
-- [ ] T027 Review `setup/01_schemas.sql` and `setup/01_schemas_verify.sql` against contracts/setup-and-verify.md: guarantees G1 to G7 and V1 to V3 hold, the two report queries are identical apart from the `revogado` rows, and neither file contains a profile name, a `DROP`, or a reference to a catalog other than `workspace` and `system`
-- [ ] T028 Run `setup/01_schemas_verify.sql` one last time and confirm the report has 12 `PASS` rows and no `FAIL` row, and that no test object (`zz_teste_acesso`, `zz_teste_reexecucao`) remains in any of the three schemas
+- [X] T025 [P] In `doc/getting-started.md`, replace the Prerequisites paragraph that says the repository has no script and the `CREATE SCHEMA` lines of its SQL block with instructions to run `setup/01_schemas.sql` and then `setup/01_schemas_verify.sql` with an explicit `--profile`, stating that the report must contain no `FAIL` row; keep the `CREATE VOLUME IF NOT EXISTS workspace.bronze.landing` statement as a separate manual step, since the volume is out of scope for this feature
+- [X] T026 [P] In `doc/README.md`, add `setup/` to the repository layout tree with the two files and a one-line description of each (`01_schemas.sql`: creates the schemas and applies the access rule; `01_schemas_verify.sql`: read-only verification report)
+- [X] T027 Review `setup/01_schemas.sql` and `setup/01_schemas_verify.sql` against contracts/setup-and-verify.md: guarantees G1 to G7 and V1 to V3 hold, the two report queries are identical apart from the `revogado` rows, and neither file contains a profile name, a `DROP`, or a reference to a catalog other than `workspace` and `system`
+- [X] T028 Run `setup/01_schemas_verify.sql` one last time and confirm the report has 12 `PASS` rows and no `FAIL` row, and that no test object (`zz_teste_acesso`, `zz_teste_reexecucao`) remains in any of the three schemas
 
 ---
 
@@ -213,3 +213,23 @@ Task: "Add setup/ to the repository layout in doc/README.md"
   `code_tips/`, which is no longer in the repository) is done with
   `/speckit-constitution`, not as a task of this feature.
 - Commit after each phase checkpoint.
+
+## Implementation notes (2026-10-10)
+
+All 28 tasks are complete. Deviations from the task text, with the reason:
+
+- **T001**: `setup/01_schemas_verify.sql` is a single `WITH ... SELECT` query, not a
+  compound statement. Its constants live in a `constantes` CTE. A plain query cannot
+  change anything, which makes guarantee V1 (read-only) hold by construction, and the
+  same text is reused as the last statement of the setup script.
+- **T010**: the description is re-applied only when it differs from the expected text,
+  so that a second run changes nothing (SC-004). `CREATE`, `COMMENT`, `GRANT` and
+  `REVOKE` run through `EXECUTE IMMEDIATE` inside a loop over the three schemas.
+- **T022, T023**: the stray grant was given to `account users`. The workspace-local group
+  `users` is not a Unity Catalog principal, and the system group
+  `_workspace_users_workspace_...` cannot receive schema grants. quickstart.md was
+  corrected accordingly.
+- **T022 finding**: the information schema reflects a `REVOKE` within the same compound
+  statement, so no change to the `acesso_direto` rows was needed.
+- **T024**: preconditions P2 and P3 were verified by reading the script only. The
+  workspace has a single user, so neither can be provoked.

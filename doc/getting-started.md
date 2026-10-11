@@ -12,13 +12,27 @@ point at a different catalog and need adjusting before a clean run.
 - A catalog named `workspace`
 - Permission to create schemas, volumes, tables and pipelines in it
 
-The repository has no script that creates the schemas or the landing volume, and
-no pipeline or bundle definition. Create them by hand:
+### Create the schemas
+
+The `bronze`, `silver` and `gold` schemas are created by a script that can be run
+again at any time. It makes `arthur.luz@dataslight.com.br` the owner and the only
+identity with access, never drops anything, and refuses to run as anyone else.
+Choose your CLI profile and pass it explicitly:
+
+```bash
+databricks experimental aitools tools query setup/01_schemas.sql --profile <profile>
+databricks experimental aitools tools query setup/01_schemas_verify.sql --profile <profile>
+```
+
+Both commands print the same verification report. The environment is ready when
+the report has no `FAIL` row; a clean setup shows 12 `PASS` rows. The second
+command is read-only and can be used on its own to check the environment.
+
+### Create the landing volume
+
+The volume for source files is not part of that script yet. Create it by hand:
 
 ```sql
-CREATE SCHEMA IF NOT EXISTS workspace.bronze;
-CREATE SCHEMA IF NOT EXISTS workspace.silver;
-CREATE SCHEMA IF NOT EXISTS workspace.gold;
 CREATE VOLUME IF NOT EXISTS workspace.bronze.landing;
 ```
 

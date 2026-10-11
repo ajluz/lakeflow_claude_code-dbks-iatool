@@ -31,6 +31,9 @@ lakeflow/
 │   ├── functions.py         Data generators + creation of gold.dim_tempo
 │   ├── user_case.ipynb      Walkthrough: case study, setup, queries per layer
 │   └── clean_up_env.ipynb   Drops tables and landing files
+├── setup/                   Environment preparation, run by hand in step order
+│   ├── 01_schemas.sql           Creates the schemas and applies the access rule
+│   └── 01_schemas_verify.sql    Read-only verification report
 ├── data/                    Local tooling state, no datasets
 └── doc/                     This documentation
     └── lakeflow_architecture.png   Screenshot of the pipeline graph

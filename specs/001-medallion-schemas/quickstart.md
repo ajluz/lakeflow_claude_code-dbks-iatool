@@ -116,17 +116,17 @@ Expected: 12 `PASS` rows; `bronze` and `gold` untouched.
 
 ```bash
 databricks experimental aitools tools query \
-  "GRANT USE SCHEMA ON SCHEMA workspace.gold TO \`users\`" --profile $PROFILE
+  "GRANT USE SCHEMA ON SCHEMA workspace.gold TO \`account users\`" --profile $PROFILE
 databricks experimental aitools tools query setup/01_schemas_verify.sql --profile $PROFILE
 ```
 
-Expected: the `acesso_direto` row for `workspace.gold` is `FAIL` and names `users`.
+Expected: the `acesso_direto` row for `workspace.gold` is `FAIL` and names `account users`.
 
 ```bash
 databricks experimental aitools tools query setup/01_schemas.sql --profile $PROFILE
 ```
 
-Expected: one `revogado` row (`workspace.gold`, `users`, `USE SCHEMA`) and 12 `PASS` rows.
+Expected: one `revogado` row (`workspace.gold`, `account users`, `USE_SCHEMA`) and 12 `PASS` rows.
 
 ## Scenario 4: refusals (edge cases)
 

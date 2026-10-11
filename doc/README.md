@@ -23,16 +23,19 @@ a one-big-table for analytics.
 
 ```
 lakeflow/
-├── code_tips/               Pipeline source (SQL), one file per dataset
-│   ├── 01_bronze/           Auto Loader ingestion into streaming tables
-│   ├── 02_silver/           Validation, quarantine, conformed tables, CDC (SCD 1)
-│   └── 03_gold/             Dimensions, fact table, OBT
+├── src/                     Project code: what the pipeline deploys and runs
+│   └── pipeline/            Pipeline source (SQL), one file per dataset
+│       └── 01_bronze/       Auto Loader ingestion into streaming tables
+│           ├── dados_api.sql       Site events, from landing/stream/ (JSON)
+│           ├── dados_files.sql     Corporate sales, from landing/files/ (CSV)
+│           └── dados_database.sql  Course catalog changes, from landing/database/ (CSV)
 ├── explorations/            Auxiliary code: setup, generators and notebooks
 │   ├── setup/               Environment preparation, run by hand in step order
 │   │   ├── 01_schemas.sql                Creates the schemas and applies the access rule
 │   │   ├── 01_schemas_verify.sql         Read-only verification report for the schemas
 │   │   ├── 02_landing_volume.sql         Creates the landing volume and applies the access rule
-│   │   └── 02_landing_volume_verify.sql  Read-only verification report for the volume
+│   │   ├── 02_landing_volume_verify.sql  Read-only verification report for the volume
+│   │   └── 03_pipeline_dev.json          Settings of the development pipeline
 │   ├── functions.py         Data generators + creation of gold.dim_tempo
 │   ├── user_case.ipynb      Walkthrough: case study, setup, queries per layer
 │   └── clean_up_env.ipynb   Drops tables and landing files
@@ -41,8 +44,9 @@ lakeflow/
     └── lakeflow_architecture.png   Screenshot of the pipeline graph
 ```
 
-The numeric prefixes in `code_tips/` are for reading order only. A declarative
-pipeline resolves the execution order from the dependencies between datasets.
+The numeric prefix of each layer folder under `src/pipeline/` is for reading
+order only. A declarative pipeline resolves the execution order from the
+dependencies between datasets. The silver and gold layers are not built yet.
 
 ## At a glance
 
@@ -50,7 +54,7 @@ pipeline resolves the execution order from the dependencies between datasets.
 |---|---|
 | Catalog / schemas | `workspace.bronze`, `workspace.silver`, `workspace.gold` |
 | Landing volume | `/Volumes/workspace/bronze/landing/{stream,files,database}` |
-| Pipeline datasets | 3 bronze, 5 silver tables + 5 temporary views + 1 temporary table, 5 gold |
+| Pipeline datasets | 3 bronze streaming tables; silver and gold not built yet |
 | Created outside the pipeline | `workspace.gold.dim_tempo` (by `functions.py`) |
 | Target environment | Databricks Free Edition (streaming simulated with `availableNow`) |
 

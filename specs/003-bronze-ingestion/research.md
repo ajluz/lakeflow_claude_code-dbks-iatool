@@ -26,7 +26,7 @@ The landing volume, empty when feature 002 finished, now holds generated data.
 | Sibling of the source folders | `_checkpoint_stream/`, the stream generator's bookkeeping |
 | Entries whose names start with `_` | not read as data: a batch read of each folder counted exactly the data files above |
 | Rescued records today | 0 in all three sources |
-| File path reported by the file metadata | has the form `dbfs:/Volumes/workspace/bronze/landing/<folder>/<file>` |
+| File path reported by the file metadata | `dbfs:/Volumes/workspace/bronze/landing/<folder>/<file>` in a batch read on the SQL warehouse; `/Volumes/...` without the scheme inside the pipeline (seen during implementation) |
 | Tables in `workspace.bronze` | none |
 | Pipelines in the workspace | one, `New Pipeline 2026-08-27 17:09`, idle, pointing at `/Workspace/Users/arthur.luz@dataslight.com.br/lakeflow/code_tips/**`, a folder that is no longer in the repository |
 | Bundle | `databricks.yml` defines a `dev` target in development mode and no resources |
@@ -64,9 +64,11 @@ every source column under its own name (FR-005) and brings `_rescued_data`, whic
 keeps the column order of the project's earlier bronze tables, which the documentation and
 notebooks show.
 
-**Note on `source_file_name`**: its value is the full path with the `dbfs:` scheme, not
-only the file name. The column name is kept because the request and the constitution name
-it.
+**Note on `source_file_name`**: its value is the full path of the file, not only the file
+name. Inside the pipeline the path is `/Volumes/workspace/bronze/landing/<folder>/<file>`,
+with no scheme; the same expression in a batch read on the SQL warehouse returns it with a
+`dbfs:` prefix. Comparisons between the two must strip that prefix. The column name is
+kept because the request and the constitution name it.
 
 ## Decision 3: file options per source
 

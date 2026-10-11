@@ -61,7 +61,8 @@ The environment is ready when no row says `FAIL`; a clean environment shows 18 `
 ## 1. Import the code
 
 Import the repository into the workspace as a Git folder, or upload
-[code_tips/](../code_tips/) and [explorations/](../explorations/).
+[explorations/](../explorations/) to run the notebooks. The pipeline source in
+[src/pipeline/](../src/pipeline/) is uploaded by the commands of step 3.
 
 ## 2. Generate the source data
 
@@ -85,14 +86,52 @@ Keep `run_as_batch=True` on Free Edition. See
 
 ## 3. Create and run the pipeline
 
-1. Create a new ETL pipeline (Lakeflow Spark Declarative Pipelines).
-2. Set the default catalog to `workspace`. Every table in the code is fully
-   qualified, so the default schema only affects the temporary views.
-3. Add the three folders under `code_tips/` as the pipeline's source code.
-4. Run the pipeline.
+The pipeline source is [src/pipeline/](../src/pipeline/), and the settings of
+the development pipeline are in
+[explorations/setup/03_pipeline_dev.json](../explorations/setup/03_pipeline_dev.json).
+Each of the three landing folders must already hold data (step 2).
 
-The resulting graph should match
-[lakeflow_architecture.png](lakeflow_architecture.png).
+Upload the source and create the pipeline once:
+
+```bash
+WS=/Workspace/Users/arthur.luz@dataslight.com.br/lakeflow_dev/src/pipeline
+databricks workspace import-dir src/pipeline $WS --overwrite --profile <profile>
+PIPELINE_ID=$(databricks pipelines create --json @explorations/setup/03_pipeline_dev.json \
+  --profile <profile> -o json | jq -r .pipeline_id)
+```
+
+Check the code without touching data, then run:
+
+```bash
+databricks pipelines start-update $PIPELINE_ID --validate-only --profile <profile>
+
+UPDATE_ID=$(databricks pipelines start-update $PIPELINE_ID --profile <profile> -o json | jq -r .update_id)
+while :; do
+  STATE=$(databricks pipelines get-update $PIPELINE_ID $UPDATE_ID --profile <profile> -o json | jq -r .update.state)
+  echo "$(date +%H:%M:%S) $STATE"
+  case "$STATE" in COMPLETED|FAILED|CANCELED) break;; esac
+  sleep 15
+done
+```
+
+After a code change, upload again with the same `import-dir` command and start
+a new update. A normal run never uses `--full-refresh`: it discards what was
+ingested and reads every file again.
+
+If an update fails, the cause is in the pipeline's events:
+
+```bash
+databricks pipelines list-pipeline-events $PIPELINE_ID --profile <profile> -o json \
+  | jq '[.[] | select(.level=="ERROR") | (.error.exceptions[0].message // .message)] | .[0:3]'
+```
+
+On Free Edition, an update can fail with `RESOURCE_EXHAUSTED` when other
+serverless compute is running, such as a SQL warehouse that a recent query left
+awake. Stop it, wait about a minute and start the update again.
+
+Today the pipeline has the bronze layer only. The graph in
+[lakeflow_architecture.png](lakeflow_architecture.png) shows the earlier, complete
+pipeline.
 
 ## 4. Explore the results
 

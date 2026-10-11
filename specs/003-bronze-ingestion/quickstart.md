@@ -99,8 +99,9 @@ q "DESCRIBE workspace.bronze.dados_database"
 Expected:
 
 - both null counts are 0 (SC-003);
-- `arquivos` equals the number of data files in the source folder, and every
-  `source_file_name` starts with `dbfs:/Volumes/workspace/bronze/landing/` followed by
+- `arquivos` equals the number of data files in the source folder (when comparing paths
+  with a batch read, strip the `dbfs:` prefix the batch read adds), and every
+  `source_file_name` starts with `/Volumes/workspace/bronze/landing/` followed by
   that source's folder (SC-004);
 - `quality` is `bronze` (SC-008);
 - the columns are `processing_time`, `source_file_name`, the source columns of the data
@@ -142,16 +143,17 @@ ends with `zz_teste_bronze_update.csv`.
 Bronze is append-only, so the test row stays unless the table is rebuilt. To return
 `dados_database` to the original rows, remove the test file and fully refresh that one
 table. A full refresh discards what was ingested, so it is run only with the owner's
-approval:
+approval. The CLI has no flag for refreshing a single table; the selection goes in the
+request body:
 
 ```bash
 databricks fs rm dbfs:/Volumes/workspace/bronze/landing/database/zz_teste_bronze_update.csv --profile $PROFILE
-databricks pipelines start-update $PIPELINE_ID --full-refresh-selection dados_database --profile $PROFILE
+databricks pipelines start-update $PIPELINE_ID \
+  --json '{"full_refresh_selection": ["dados_database"]}' --profile $PROFILE
 ```
 
-Confirm the flag with `databricks pipelines start-update --help` before using it. Expected
-afterwards: `dados_database` has the same count as its landing files again, and the other
-two tables are unchanged.
+Expected afterwards: `dados_database` has the same count as its landing files again, and
+the row counts and latest `processing_time` of the other two tables are unchanged.
 
 Keeping the row is also valid: it is the same change the talk's change-data-capture demo
 makes.

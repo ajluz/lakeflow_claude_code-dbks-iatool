@@ -1,26 +1,47 @@
 # Pipeline reference
 
-Every dataset defined under [code_tips/](../code_tips/), in dependency order.
-Tables carry a `quality` table property (`bronze`, `silver` or `gold`).
+Every dataset of the pipeline, in dependency order. Tables carry a `quality`
+table property (`bronze`, `silver` or `gold`).
+
+The Bronze section describes the pipeline as it is built today, under
+[src/pipeline/](../src/pipeline/). The Silver and Gold sections still describe
+the earlier pipeline, whose `code_tips/` folder is no longer in the repository;
+they will be replaced as those layers are rebuilt.
 
 ## Bronze
 
-All three are streaming tables fed by Auto Loader with
-`cloudFiles.inferColumnTypes = true`. Each adds `processing_time`
-(`current_timestamp()`) and `source_file_name` (`_metadata.file_path`) to the
-source columns, and inherits Auto Loader's `_rescued_data` column.
+Three streaming tables in `workspace.bronze`, one per source of the landing
+volume. Each is loaded incrementally with Auto Loader, written in SQL as
+`STREAM read_files(...)`, and holds the source data exactly as it arrived:
+nothing is filtered, cast, renamed or deduplicated.
 
 | Table | File | Reads | Format |
 |---|---|---|---|
-| `workspace.bronze.dados_database` | [01_bronze_dados_database.sql](../code_tips/01_bronze/01_bronze_dados_database.sql) | `/Volumes/workspace/bronze/landing/database/` | CSV, header, `,` |
-| `workspace.bronze.dados_files` | [02_bronze_dados_files.sql](../code_tips/01_bronze/02_bronze_dados_files.sql) | `/Volumes/workspace/bronze/landing/files/` | CSV, header, `,` |
-| `workspace.bronze.dados_api` | [03_bronze_dados_api.sql](../code_tips/01_bronze/03_bronze_dados_api.sql) | `/Volumes/workspace/bronze/landing/stream/` | JSON |
+| `workspace.bronze.dados_api` | [dados_api.sql](../src/pipeline/01_bronze/dados_api.sql) | `/Volumes/workspace/bronze/landing/stream/` | JSON |
+| `workspace.bronze.dados_files` | [dados_files.sql](../src/pipeline/01_bronze/dados_files.sql) | `/Volumes/workspace/bronze/landing/files/` | CSV, header, `,` |
+| `workspace.bronze.dados_database` | [dados_database.sql](../src/pipeline/01_bronze/dados_database.sql) | `/Volumes/workspace/bronze/landing/database/` | CSV, header, `,` |
 
-Source columns:
+Every table has the same shape:
 
-- **dados_database** — `curso_uuid`, `nome_curso`, `nivel_curso`, `valor_curso`, `change_type`, `timestamp_change`
-- **dados_files** — `data_venda`, `nome_empresa`, `sexo`, `nome_funcionario`, `email_funcionario`, `profissao`, `idade`, `estado`, `curso`, `valor`, `disconto`
-- **dados_api** — `access_date`, `ip_address`, `access_point`, `payload` (struct of `info_usuario`, `info_produto`, `info_pagamento`, each nullable)
+| Column | Origin | Notes |
+|---|---|---|
+| `processing_time` | `current_timestamp()` | when the row was processed; never null |
+| `source_file_name` | `_metadata.file_path` | full path of the file the row came from, for example `/Volumes/workspace/bronze/landing/database/part-00000-....csv`; never null |
+| source columns | the file | every column of the source, under its own name, with inferred types |
+| `_rescued_data` | Auto Loader | null when the record fits the inferred schema; otherwise the content that did not fit |
+
+Each table carries `TBLPROPERTIES ("quality" = "bronze")` and a description.
+
+Source columns, with the types inferred from the current data:
+
+- **dados_api** — `access_date` (string), `access_point` (string), `ip_address` (string), `payload` (struct of `info_usuario`, `info_produto`, `info_pagamento`, each nullable)
+- **dados_files** — `data_venda` (date), `nome_empresa`, `sexo`, `nome_funcionario`, `email_funcionario`, `profissao`, `idade` (int), `estado`, `curso`, `valor` (string, `R$ 247,00`), `disconto` (string, `5%`)
+- **dados_database** — `curso_uuid`, `nome_curso`, `nivel_curso`, `valor_curso` (double), `change_type` (`insert`, `update`, `delete`), `timestamp_change` (timestamp)
+
+A file is ingested once. A later run reads only files that arrived since the
+previous run; entries whose names start with `_`, such as Spark's marker files,
+are skipped. Because column types are inferred, each source folder must hold at
+least one data file before the first run.
 
 ## Silver
 

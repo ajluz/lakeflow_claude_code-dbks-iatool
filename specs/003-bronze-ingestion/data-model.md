@@ -11,7 +11,7 @@ for the data in the landing volume on 2026-10-11 and are not declared in the cod
 | Column | Type | Origin | Rule |
 |---|---|---|---|
 | `processing_time` | TIMESTAMP | `current_timestamp()` | never null; the moment the row was processed (FR-006) |
-| `source_file_name` | STRING | `_metadata.file_path` | never null; full path of the file, in the form `dbfs:/Volumes/workspace/bronze/landing/<folder>/<file>` (FR-007) |
+| `source_file_name` | STRING | `_metadata.file_path` | never null; full path of the file, in the form `/Volumes/workspace/bronze/landing/<folder>/<file>` (FR-007) |
 | *source columns* | inferred | the file | every column of the source, under its own name (FR-005) |
 | `_rescued_data` | STRING | Auto Loader | null when the record fits the inferred schema; otherwise holds the content that did not fit (FR-008) |
 

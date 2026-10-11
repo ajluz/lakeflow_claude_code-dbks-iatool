@@ -29,8 +29,10 @@ lakeflow/
 │   └── 03_gold/             Dimensions, fact table, OBT
 ├── explorations/            Auxiliary code: setup, generators and notebooks
 │   ├── setup/               Environment preparation, run by hand in step order
-│   │   ├── 01_schemas.sql           Creates the schemas and applies the access rule
-│   │   └── 01_schemas_verify.sql    Read-only verification report
+│   │   ├── 01_schemas.sql                Creates the schemas and applies the access rule
+│   │   ├── 01_schemas_verify.sql         Read-only verification report for the schemas
+│   │   ├── 02_landing_volume.sql         Creates the landing volume and applies the access rule
+│   │   └── 02_landing_volume_verify.sql  Read-only verification report for the volume
 │   ├── functions.py         Data generators + creation of gold.dim_tempo
 │   ├── user_case.ipynb      Walkthrough: case study, setup, queries per layer
 │   └── clean_up_env.ipynb   Drops tables and landing files

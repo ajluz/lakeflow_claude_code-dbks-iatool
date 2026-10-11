@@ -30,11 +30,33 @@ command is read-only and can be used on its own to check the environment.
 
 ### Create the landing volume
 
-The volume for source files is not part of that script yet. Create it by hand:
+The `landing` volume, where source files arrive, is created in `workspace.bronze` by a
+second script. Run it after the schemas step:
 
-```sql
-CREATE VOLUME IF NOT EXISTS workspace.bronze.landing;
+```bash
+databricks experimental aitools tools query explorations/setup/02_landing_volume.sql --profile <profile>
 ```
+
+It creates a managed volume owned by `arthur.luz@dataslight.com.br`, with no access for
+anyone else. It can be run again at any time: it never drops or replaces the volume, so
+files already in it are kept. It refuses to run if the `bronze` schema is missing. The
+report it prints must have no `FAIL` row; a clean run shows 6 `PASS` rows.
+
+The folders inside the volume, one per source, are created by the data generators.
+
+### Check the whole environment
+
+One command runs the read-only verification of both steps and prints one table. It needs
+`jq`:
+
+```bash
+databricks experimental aitools tools query \
+  explorations/setup/01_schemas_verify.sql \
+  explorations/setup/02_landing_volume_verify.sql \
+  --profile <profile> --output json | jq -r '.[].rows[] | @tsv'
+```
+
+The environment is ready when no row says `FAIL`; a clean environment shows 18 `PASS` rows.
 
 ## 1. Import the code
 

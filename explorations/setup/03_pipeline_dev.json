@@ -1,0 +1,20 @@
+{
+  "name": "lakeflow_dataslight_dev",
+  "catalog": "workspace",
+  "schema": "bronze",
+  "serverless": true,
+  "continuous": false,
+  "development": true,
+  "channel": "CURRENT",
+  "configuration": {
+    "pipelines.numUpdateRetryAttempts": "0",
+    "pipelines.maxFlowRetryAttempts": "0"
+  },
+  "libraries": [
+    {
+      "glob": {
+        "include": "/Workspace/Users/arthur.luz@dataslight.com.br/lakeflow_dev/src/pipeline/**"
+      }
+    }
+  ]
+}

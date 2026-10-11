@@ -1,7 +1,7 @@
 .databricks
-.claude/
-.ai-dev-kit/
-.vscode/
-.venv/
+.claude
+.ai-dev-kit
+.vscode
+.venv
 __pycache__/
 .DS_Store

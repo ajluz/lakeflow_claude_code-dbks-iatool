@@ -540,3 +540,24 @@ validation table, keeping `regras_violadas`, `fl_registro_invalido`, `origem` an
 validation `data_carga`, and adds `data_carga_quarentena`. The background deploy started
 at 14:57 was stopped at 14:59, before its dry run began. No update ran. The revised
 file was uploaded and is identical to the repository.
+
+**T014/T015 as run**: the owner started update `4a36cc07-...` from the UI at 15:02 UTC.
+It was a normal update with the final code, and the CLI's dry run did not start because
+of it. The update **failed**:
+- `tb_quarentena` was created, and the `temp_tb_validacao_api` flow completed.
+- The validation flow wrote into the private table's backing table. That table was
+  created at 14:40 with the v1.5.0 schema, which still has `source_file_name` and
+  `_rescued_data`, now always null.
+- The quarantine flow read `*` from that table, got those two extra columns, and failed
+  with `[DELTA_METADATA_MISMATCH] A metadata mismatch was detected when writing to the
+  Delta table`. Unity Catalog does not allow automatic schema migration.
+
+No normal update can fix the stale schema. **The owner approved** (2026-10-18, about
+15:08 UTC) a refresh of only the two silver tables:
+`--json '{"full_refresh_selection": ["workspace.silver.temp_tb_validacao_api",
+"workspace.silver.tb_quarentena"]}'`. Bronze is not part of the selection.
+
+Lesson for later features: a validate-only run creates no tables, and a failed first run
+can still leave a backing table with an early schema. When a dataset's columns change
+before it has ever completed, refresh it on the next run instead of hoping a normal
+update reconciles the schema.

@@ -138,7 +138,7 @@ run the matching step of quickstart.md against the workspace.
 **Purpose**: the silver folder and confirmation that the existing pipeline is the one to extend
 
 - [X] T001 Create the folder `src/pipeline/02_silver/`
-- [ ] T002 Ask the owner for the CLI profile. Then, changing nothing: run `databricks pipelines get 8d51ac7a-02be-4ce2-8afd-f4f263e448dd --profile <profile>` and confirm the name is `lakeflow_dataslight_dev`, `catalog` is `workspace`, `serverless` is `true`, and `libraries` is the single glob `/Workspace/Users/arthur.luz@dataslight.com.br/lakeflow_dev/src/pipeline/**`; confirm its latest update is `COMPLETED`. If any of this differs, stop and ask the owner. `explorations/setup/03_pipeline_dev.json` is not changed by this feature
+- [X] T002 Ask the owner for the CLI profile. Then, changing nothing: run `databricks pipelines get 8d51ac7a-02be-4ce2-8afd-f4f263e448dd --profile <profile>` and confirm the name is `lakeflow_dataslight_dev`, `catalog` is `workspace`, `serverless` is `true`, and `libraries` is the single glob `/Workspace/Users/arthur.luz@dataslight.com.br/lakeflow_dev/src/pipeline/**`; confirm its latest update is `COMPLETED`. If any of this differs, stop and ask the owner. `explorations/setup/03_pipeline_dev.json` is not changed by this feature
 
 ---
 
@@ -167,7 +167,7 @@ run the matching step of quickstart.md against the workspace.
 
 - [X] T007 [US1] Create `src/pipeline/02_silver/temp_tb_validacao_api.sql` in the validation statement shape of the Conventions, with the four rules substituted verbatim. Use `COMMENT 'Eventos da API validados: cada evento do bronze, sem alteração, com as regras violadas e a flag fl_registro_invalido.'`. Add a header comment in Portuguese saying that this is the single validation of the API source at the bronze-to-silver boundary, that the expectations only measure, and that `fl_registro_invalido = true` goes to `tb_quarentena` while `false` goes on to the conformed tables. Lay out the four `CONSTRAINT` clauses and the four `CASE` lines so that the rules line up and can be compared line by line. Column rules from data-model.md: `regras_violadas` "empty array when none failed; never `NULL`"; `fl_registro_invalido` "never `NULL`"; `origem` "literal `'API'`… never `NULL`; not derived from the data"; `data_carga` "`current_timestamp()`… never `NULL`"
 - [X] T008 [US1] Review `src/pipeline/02_silver/temp_tb_validacao_api.sql` against the contract: it is `PRIVATE`, three-level named, has `CLUSTER BY (fl_registro_invalido)` and `TBLPROPERTIES ("quality" = "silver")`; the four `CONSTRAINT` conditions equal the four `CASE WHEN NOT (...)` conditions character for character and in the same order; the select list order is `*`, `regras_violadas`, `fl_registro_invalido`, `origem`, `data_carga`; nothing from the forbidden list appears (search the file for `ON VIOLATION`, `PARTITIONED`, `WHERE`, `LIVE`)
-- [ ] T009 [US1] Upload the pipeline source with `databricks workspace import-dir src/pipeline /Workspace/Users/arthur.luz@dataslight.com.br/lakeflow_dev/src/pipeline --overwrite --profile <profile>`, and confirm with `databricks workspace list /Workspace/Users/arthur.luz@dataslight.com.br/lakeflow_dev/src/pipeline/02_silver --profile <profile>` that `temp_tb_validacao_api.sql` is there as a file, not a notebook
+- [X] T009 [US1] Upload the pipeline source with `databricks workspace import-dir src/pipeline /Workspace/Users/arthur.luz@dataslight.com.br/lakeflow_dev/src/pipeline --overwrite --profile <profile>`, and confirm with `databricks workspace list /Workspace/Users/arthur.luz@dataslight.com.br/lakeflow_dev/src/pipeline/02_silver --profile <profile>` that `temp_tb_validacao_api.sql` is there as a file, not a notebook
 - [ ] T010 [US1] Stop the SQL warehouse (Conventions), run a dry run with `databricks pipelines start-update <pipeline_id> --validate-only --profile <profile>`, and poll it to a terminal state. If `COMPLETED`, go on. If it failed on the lateral alias, apply the subquery fallback of the Conventions in `src/pipeline/02_silver/temp_tb_validacao_api.sql`, upload again (T009) and repeat. If it failed on the qualified private name or on `CLUSTER BY`, stop and report the exact error message to the owner. For any other error, fix the cause and repeat
 - [ ] T011 [US1] Stop the SQL warehouse, run a real update with `databricks pipelines start-update <pipeline_id> --profile <profile>`, poll it to `COMPLETED`, and record its `update_id` in the Implementation notes. Confirm with `databricks tables list workspace silver --profile <profile>` that `temp_tb_validacao_api` is **not** listed, because it is private
 - [ ] T012 [US1] With the first event log query of quickstart.md step 4 for the update of T011, confirm that the flow of `temp_tb_validacao_api` wrote exactly `total` rows (T005), so that no event was dropped (FR-002, SC-001), and that the bronze flows wrote 0 rows. Record the number
@@ -374,6 +374,16 @@ API (`Provided access token does not have required scopes: pipelines` /
 `unity-catalog`). The profile `databricks-free` is marked invalid by
 `databricks auth profiles`. **T002 and every task that runs or inspects the pipeline are
 blocked until the owner gives a profile with those scopes.**
+
+**Profile change**: the owner re-authenticated `databricks-free` (OAuth, same workspace)
+and asked to deploy. From T002 on, every command uses `databricks-free`.
+
+**T002**: `lakeflow_dataslight_dev` (`8d51ac7a-02be-4ce2-8afd-f4f263e448dd`) matches:
+catalog `workspace`, serverless, development, single glob over `src/pipeline/**`. Its
+latest update before this feature, `68a80a60-...`, completed at 14:30 UTC, after two
+failed ones at 14:26.
+
+**T009**: `src/pipeline` uploaded; `02_silver/temp_tb_validacao_api.sql` is a `FILE`.
 
 **T003**: skill read (`SKILL.md`, `references/streaming-table-sql.md`,
 `references/expectations-sql.md`). No disagreement with the contract. The skill lists

@@ -4,8 +4,8 @@ Every dataset of the pipeline, in dependency order. Tables carry a `quality`
 table property (`bronze`, `silver` or `gold`).
 
 The Bronze section, and in Silver the views `vw_bronze_dados_api` and
-`vw_silver_eventos_api` and the sections `temp_tb_validacao_api`, `tb_quarentena` and
-`tb_acesso`, describe the pipeline as it is built today, under [src/pipeline/](../src/pipeline/). The other Silver datasets and the Gold
+`vw_silver_eventos_api`, the four views of `tb_usuario`, and the sections
+`temp_tb_validacao_api`, `tb_quarentena`, `tb_acesso` and `tb_usuario`, describe the pipeline as it is built today, under [src/pipeline/](../src/pipeline/). The other Silver datasets and the Gold
 section still describe the earlier pipeline, whose `code_tips/` folder is no longer
 in the repository; they will be replaced as those layers are rebuilt.
 
@@ -54,7 +54,10 @@ Exist only during a pipeline update and are not published to the catalog.
 |---|---|---|
 | `vw_bronze_dados_api` | [01](../src/pipeline/02_silver/01_vw_bronze_dados_api.sql) | `STREAM(bronze.dados_api)` minus `source_file_name`, `_rescued_data`; the bronze-to-silver boundary of the API source. As built |
 | `vw_silver_eventos_api` | [04](../src/pipeline/02_silver/04_vw_silver_eventos_api.sql) | valid events of `temp_tb_validacao_api` (`NOT fl_registro_invalido`) plus `timestamp_acesso`, `usuario_uuid` and `curso_uuid`, the single definition of those keys for the API source; later API tables reuse them. As built |
-| `vw_bronze_dados_files` | [02](../code_tips/02_silver/02_vw_bronze_dados_files.sql) | `bronze.dados_files` minus `source_file_name`, `_rescued_data` |
+| `vw_bronze_dados_files` | [06](../src/pipeline/02_silver/06_vw_bronze_dados_files.sql) | `STREAM(bronze.dados_files)` minus `source_file_name`, `_rescued_data`; the bronze-to-silver boundary of the files source. As built |
+| `vw_silver_vendas_arquivo` | [07](../src/pipeline/02_silver/07_vw_silver_vendas_arquivo.sql) | the files source plus `usuario_uuid` (`nome_empresa`, `nome_funcionario`), the single definition of that key; later sales tables reuse it. As built |
+| `vw_silver_usuario_api` | [08](../src/pipeline/02_silver/08_vw_silver_usuario_api.sql) | API users (valid events with a user) in `tb_usuario`'s shape. As built |
+| `vw_silver_usuario_arquivo` | [09](../src/pipeline/02_silver/09_vw_silver_usuario_arquivo.sql) | files users in `tb_usuario`'s shape. As built |
 | `vw_silver_tb_venda_api` | [07](../code_tips/02_silver/07_vw_silver_tb_venda_api.sql) | Sales shaped from valid API events that have a payment payload |
 | `vw_silver_tb_venda_files` | [08](../code_tips/02_silver/08_vw_silver_tb_venda_files.sql) | Sales shaped from partner files |
 | `vw_bronze_tb_curso` | [10](../code_tips/02_silver/10_vw_bronze_tb_curso.sql) | `bronze.dados_database` plus `origem = 'DATABASE'` |
@@ -153,20 +156,31 @@ The table shows the three expectation actions:
 | `check_timestamp_acesso` | `timestamp_acesso IS NOT NULL` | record only |
 | `check_acesso_uuid` | `acesso_uuid IS NOT NULL` | record only; `acesso_uuid` is also unique in the table |
 
+Expectation metrics count every row of the query, including rows that another rule
+drops. `check_local_acesso` reported 118,305 failures on 2026-10-18, while the table keeps
+117,131 `unknown` rows. The other 1,174 also had the impossible address and were dropped.
+
 **Reconciliation**: valid API events = rows in `tb_acesso` + rows dropped by
 `check_endereco_ip_acesso`. On 2026-10-18 that was 2,541,715 = 2,516,192 + 25,523.
 
 ### tb_usuario
 
-[06_tb_usuario.sql](../code_tips/02_silver/06_tb_usuario.sql) — streaming table.
-Users from both channels, combined with `UNION ALL`.
+[10_tb_usuario.sql](../src/pipeline/02_silver/10_tb_usuario.sql) — streaming table
+`workspace.silver.tb_usuario`. As built. Fed by two append flows (`INSERT INTO ... BY
+NAME`), one per source:
+- `silver_tb_usuario_api_flow` from `vw_silver_usuario_api`;
+- `silver_tb_usuario_arquivo_flow` from `vw_silver_usuario_arquivo`.
+
+`usuario_uuid` is unique because each key occurs once in both sources. The table appends
+and does not merge, so uniqueness is verified after each load. A re-delivered employee
+would show up as a repeated key.
 
 | Column | From API | From files |
 |---|---|---|
-| `usuario_uuid` | `md5(access_date ‖ nome)` | `md5(nome_empresa ‖ nome_funcionario)` |
+| `usuario_uuid` | from `vw_silver_eventos_api` | from `vw_silver_vendas_arquivo` |
 | `nome_usuario` | `payload.info_usuario.nome` | `nome_funcionario` |
 | `email_usuario` | `payload.info_usuario.email` | `email_funcionario` |
-| `idade_usuario` | `idade` as int | `idade` as int |
+| `idade_usuario` | `try_cast(payload.info_usuario.idade AS INT)` | `try_cast(idade AS INT)` |
 | `sexo_usuario` | `payload.info_usuario.sexo` | `sexo` |
 | `estado_usuario` | `payload.info_usuario.estado` | `estado` |
 | `profissao_usuario` | `payload.info_usuario.profissao` | `profissao` |
@@ -174,12 +188,21 @@ Users from both channels, combined with `UNION ALL`.
 | `origem` | `'API'` | `'ARQUIVO'` |
 | `data_carga` | load timestamp | load timestamp |
 
-The API branch keeps only valid events that carry a user payload.
+API rows come only from valid events that carry a user. Business key columns:
+
+| Key | Business key columns | Defined in |
+|---|---|---|
+| `usuario_uuid` (API) | `timestamp_acesso`, `payload.info_usuario.nome` | `04_vw_silver_eventos_api.sql` |
+| `usuario_uuid` (ARQUIVO) | `nome_empresa`, `nome_funcionario` | `07_vw_silver_vendas_arquivo.sql` |
 
 | Expectation | Rule | On violation |
 |---|---|---|
-| `check_sexo_usuario` | `sexo_usuario IN ('M', 'F')` | drop row |
-| `check_email_usuario` | `email_usuario LIKE '%@%'` | record only |
+| `check_sexo_usuario` | `sexo_usuario` is `M` or `F` (null fails) | drop row; a declared exclusion, not quarantined (constitution v1.7.0, Principle IV) |
+| `check_email_usuario` | `email_usuario` contains `@` (null fails) | record only |
+| `check_usuario_uuid` | `usuario_uuid IS NOT NULL` | record only |
+
+**Reconciliation**: candidate users of both sources = rows in `tb_usuario` + rows
+dropped by `check_sexo_usuario`.
 
 ### tb_venda
 

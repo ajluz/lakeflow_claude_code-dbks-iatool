@@ -50,6 +50,9 @@ flowchart LR
         V1([vw_bronze_dados_api])
         V6([vw_silver_eventos_api])
         V2([vw_bronze_dados_files])
+        V7([vw_silver_vendas_arquivo])
+        V8([vw_silver_usuario_api])
+        V9([vw_silver_usuario_arquivo])
         T1[temp_tb_validacao_api]
         S1[tb_quarentena]
         S2[tb_acesso]
@@ -76,9 +79,9 @@ flowchart LR
 
     T1 --> S1
     T1 --> V6 --> S2
-    T1 --> S3
+    V6 --> V8 --> S3
     T1 --> V3
-    V2 --> S3
+    V2 --> V7 --> V9 --> S3
     V2 --> V4
     V3 --> S4
     V4 --> S4
@@ -121,7 +124,7 @@ The graph as rendered by the pipeline UI:
 | Partitioning by a Boolean flag (`PARTITIONED BY`; `CLUSTER BY` rejects `BOOLEAN`) | [02_temp_tb_validacao_api.sql](../src/pipeline/02_silver/02_temp_tb_validacao_api.sql) |
 | Expectations with `ON VIOLATION DROP ROW` (declared exclusion, not quarantined) | [05_tb_acesso.sql](../src/pipeline/02_silver/05_tb_acesso.sql), [06_tb_usuario.sql](../code_tips/02_silver/06_tb_usuario.sql) |
 | Expectation kept as a commented `FAIL UPDATE` | [05_tb_acesso.sql](../src/pipeline/02_silver/05_tb_acesso.sql) |
-| Combining sources with `UNION ALL` in one query | [06_tb_usuario.sql](../code_tips/02_silver/06_tb_usuario.sql) |
+| Two append flows into one table, one per source (`CREATE FLOW ... INSERT INTO ... BY NAME`) | [10_tb_usuario.sql](../src/pipeline/02_silver/10_tb_usuario.sql) |
 | Multiple append flows into one table (`CREATE FLOW ... INSERT INTO ... BY NAME`) | [09_tb_venda.sql](../code_tips/02_silver/09_tb_venda.sql) |
 | `AUTO CDC` as SCD type 1 | [11_tb_curso.sql](../code_tips/02_silver/11_tb_curso.sql) |
 | `AUTO CDC` as SCD type 2 (`__START_AT` / `__END_AT`) | [02_dim_curso.sql](../code_tips/03_gold/02_dim_curso.sql) |

@@ -98,12 +98,16 @@ Use the queries of feature 004's quickstart step 4, for the update of step 2.
 
 Expected for dataset `tb_acesso`:
 
+Every expectation is evaluated on every row of the query, including rows that
+`check_endereco_ip_acesso` then drops. So passed + failed = `validos` for each rule
+(confirmed on 2026-10-18):
+
 | Expectation | failed | passed |
 |---|---|---|
 | `check_endereco_ip_acesso` | `ip_invalido` (25,523) | `mantidos` |
-| `check_local_acesso` | `unknown_mantidos` | `mantidos` − `unknown_mantidos` |
-| `check_timestamp_acesso` | 0 | `mantidos` |
-| `check_acesso_uuid` | 0 | `mantidos` |
+| `check_local_acesso` | all valid `unknown` events (118,305), dropped ones included; the table keeps `unknown_mantidos` (117,131) | `validos` − failed |
+| `check_timestamp_acesso` | 0 | `validos` |
+| `check_acesso_uuid` | 0 | `validos` |
 
 The `tb_acesso` flow wrote `mantidos` rows. Reconciliation: `validos` = rows in
 `tb_acesso` + failed of `check_endereco_ip_acesso`, with a difference of 0.

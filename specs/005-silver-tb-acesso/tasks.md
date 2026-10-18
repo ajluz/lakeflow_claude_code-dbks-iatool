@@ -187,7 +187,7 @@ run the matching step of quickstart.md against the workspace.
 
 ## Phase 5: User Story 1 - validation
 
-- [ ] T010 [US1] Run the first two queries of quickstart.md step 3. Confirm:
+- [X] T010 [US1] Run the first two queries of quickstart.md step 3. Confirm:
   - `linhas` = `mantidos` (T002);
   - `categoria_errada`, `sem_timestamp`, `origem_errada` and `sem_data_carga` are 0;
   - the columns are `timestamp_acesso, endereco_ip_acesso, local_acesso, acesso_uuid, usuario_uuid, curso_uuid, origem, data_carga`;
@@ -205,14 +205,14 @@ run the matching step of quickstart.md against the workspace.
 
 ### Implementation for User Story 2
 
-- [ ] T011 [P] [US2] Run the expectations query of feature 004's quickstart step 4 for the update of T009. Confirm that dataset `tb_acesso` lists exactly the four expectations, with failed counts:
+- [X] T011 [P] [US2] Run the expectations query of feature 004's quickstart step 4 for the update of T009. Confirm that dataset `tb_acesso` lists exactly the four expectations, with failed counts:
   - `check_endereco_ip_acesso` = `ip_invalido` (T002);
-  - `check_local_acesso` = `unknown_mantidos`;
+  - `check_local_acesso` = all valid `unknown` events, dropped ones included (118,305 on 2026-10-18; corrected after the run, see notes);
   - `check_timestamp_acesso` = 0;
   - `check_acesso_uuid` = 0.
 
   Confirm that the `tb_acesso` flow wrote `mantidos` rows, and that `SELECT count(*) FROM workspace.silver.tb_acesso WHERE endereco_ip_acesso = '999.999.999.999'` is 0. Record the numbers.
-- [ ] T012 [P] [US2] Reconcile (FR-014, SC-001): `validos` = rows in `tb_acesso` + failed of `check_endereco_ip_acesso`, with a difference of 0. Confirm that `tb_quarentena` did not grow (still 9,240), so the dropped rows were not quarantined
+- [X] T012 [P] [US2] Reconcile (FR-014, SC-001): `validos` = rows in `tb_acesso` + failed of `check_endereco_ip_acesso`, with a difference of 0. Confirm that `tb_quarentena` did not grow (still 9,240), so the dropped rows were not quarantined
 - [ ] T013 [US2] Confirm the commented rule: in `src/pipeline/02_silver/05_tb_acesso.sql`, the line after the active `check_local_acesso` starts with `--` and ends in `ON VIOLATION FAIL UPDATE,`; `grep -c "FAIL UPDATE" src/pipeline/02_silver/05_tb_acesso.sql` is 1, and that line is commented. Ask the owner to confirm that the pipeline UI's Data quality tab for `tb_acesso` shows the four expectations. Record the answer
 
 **Checkpoint**: the three expectation actions are demonstrable
@@ -227,12 +227,12 @@ run the matching step of quickstart.md against the workspace.
 
 ### Implementation for User Story 3
 
-- [ ] T014 [P] [US3] Run the key queries of quickstart.md step 3. Confirm:
+- [X] T014 [P] [US3] Run the key queries of quickstart.md step 3. Confirm:
   - `sem_chave` = 0, `chaves_repetidas` = 0 and `acesso_uuid_divergente` = 0;
   - `sem_catalogo` = 0, so every `curso_uuid` joins the course catalog.
 
   Record `com_curso`.
-- [ ] T015 [P] [US3] Check the reference keys:
+- [X] T015 [P] [US3] Check the reference keys:
   - `SELECT count_if(usuario_uuid IS NULL) AS sem_usuario, count_if(curso_uuid IS NULL) AS sem_curso FROM workspace.silver.tb_acesso` gives counts consistent with the share of events without a user or product (research.md facts, minus dropped rows);
   - recomputing `usuario_uuid` on a sample of 1,000 rows from `vw_silver_eventos_api`'s expression, by joining back on `acesso_uuid` to bronze through the same derivations, matches. If a join-back query is too heavy on Free Edition, check `length(usuario_uuid) = 32` and `usuario_uuid RLIKE '^[0-9a-f]{32}$'` for all non-null rows instead, and say so in the notes.
 
@@ -244,7 +244,7 @@ run the matching step of quickstart.md against the workspace.
 
 **Purpose**: incremental proof, the documentation required by FR-016, and the final review
 
-- [ ] T016 Prove incremental behavior (FR-013, SC-008): following the quota conventions, run an update with no new landing data and poll it to `COMPLETED`. With the first event log query of feature 004's quickstart step 4 for that update, confirm that the `tb_acesso` flow wrote 0 rows and that the `tb_acesso` count is unchanged
+- [X] T016 Prove incremental behavior (FR-013, SC-008): following the quota conventions, run an update with no new landing data and poll it to `COMPLETED`. With the first event log query of feature 004's quickstart step 4 for that update, confirm that the `tb_acesso` flow wrote 0 rows and that the `tb_acesso` count is unchanged
 - [X] T017 [P] In `doc/pipeline-reference.md`:
   - Rewrite `### tb_acesso` as built. Cover:
     - the file `src/pipeline/02_silver/05_tb_acesso.sql`;
@@ -260,7 +260,7 @@ run the matching step of quickstart.md against the workspace.
   - In the feature table, point "Expectations with `ON VIOLATION DROP ROW`" to `../src/pipeline/02_silver/05_tb_acesso.sql`, keeping the `tb_usuario` link.
   - Add a row "Expectation kept as a commented `FAIL UPDATE`" pointing to the same file.
 - [X] T019 [P] In `doc/README.md`, add `04_vw_silver_eventos_api.sql` and `05_tb_acesso.sql` to the `02_silver/` layout with one-line descriptions, and update the "Pipeline datasets" row: in silver, 2 streaming views, 1 private streaming table and 2 streaming tables
-- [ ] T020 Final review against contracts/silver-tb-acesso.md:
+- [X] T020 Final review against contracts/silver-tb-acesso.md:
   - the two files match their shapes;
   - the workspace copies are identical to the repository;
   - `git status` shows changes only in `src/pipeline/02_silver/`, `doc/` and `specs/005-silver-tb-acesso/`;
@@ -377,3 +377,48 @@ at 15:52 (`Pipeline resources are being provisioned`). The owner had started upd
 `START_RESOURCES` warm-up `a503afae-...` ran and completed at 15:52.
 
 **T009**: update `cee901f0-476d-4411-8dbe-2219bfe4fca0` (CLI, 15:53 UTC) **COMPLETED**.
+
+**T010**: 2,516,192 rows, equal to `mantidos`. `Mobile` 1,262,684, `Computador`
+1,136,377 and `unknown` 117,131, all equal to T002. `categoria_errada`, `sem_timestamp`,
+`origem_errada` and `sem_data_carga` are 0. Columns: `timestamp_acesso,
+endereco_ip_acesso, local_acesso, acesso_uuid, usuario_uuid, curso_uuid, origem,
+data_carga`. `quality` = `silver`.
+
+**T011**: the `tb_acesso` flow wrote 2,516,192 rows. Expectations:
+
+| rule | passed | failed |
+|---|---|---|
+| `check_endereco_ip_acesso` | 2,516,192 | 25,523 |
+| `check_local_acesso` | 2,423,410 | 118,305 |
+| `check_timestamp_acesso` | 2,541,715 | 0 |
+| `check_acesso_uuid` | 2,541,715 | 0 |
+
+**Finding**: the pipeline evaluates every expectation on every row of the query,
+including the rows a `DROP ROW` rule then removes. So `check_local_acesso` counts all
+118,305 valid `unknown` events, while the table keeps 117,131. The other 1,174 `unknown`
+events also had the impossible address. The plan had predicted 117,131. The quickstart,
+T011 and `doc/pipeline-reference.md` were corrected. 0 rows in the table have the
+impossible address.
+
+**T012**: 2,541,715 valid = 2,516,192 + 25,523, with a difference of 0. `tb_quarentena`
+is unchanged at 9,240, so the dropped rows were not quarantined.
+
+**T014**: `sem_chave` 0, `chaves_repetidas` 0, `acesso_uuid_divergente` 0. `com_curso`
+218,298; `sem_catalogo` 0.
+
+**T015**: `sem_usuario` 1,767,621 and `sem_curso` 2,297,894. These are consistent with
+research.md's 1,785,466 and 2,321,243 minus the dropped rows. The sample join-back was
+replaced by the allowed format check: `usuario_formato_errado` = 0, so every non-null
+`usuario_uuid` is 32 hex characters.
+
+**T016**: update `8b516ff6-05ae-450a-89ef-61d05944a28a` (no new data) **COMPLETED**. No
+flow reported rows written, and `tb_acesso` still has 2,516,192 rows. Incremental
+behavior is confirmed.
+
+**T020**: both files match the contract, and the workspace copies are identical to the
+repository. Feature 004's files and `explorations/setup/03_pipeline_dev.json` are
+unchanged. The owner committed the code; only the post-run doc corrections were still
+uncommitted at review time.
+
+**Open**: T013 (owner). In the pipeline UI, confirm that the Data quality tab of
+`tb_acesso` shows the four expectations. The event log already shows them (T011).

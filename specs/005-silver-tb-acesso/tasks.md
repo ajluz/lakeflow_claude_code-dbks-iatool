@@ -178,8 +178,8 @@ run the matching step of quickstart.md against the workspace.
 **Purpose**: one upload, one dry run and one update
 
 - [X] T007 Upload with `databricks workspace import-dir src/pipeline /Workspace/Users/arthur.luz@dataslight.com.br/lakeflow_dev/src/pipeline --overwrite --profile databricks-free`. Confirm that `02_silver` lists five `FILE`s: `01_` to `03_` unchanged, plus `04_vw_silver_eventos_api.sql` and `05_tb_acesso.sql`. Confirm that each workspace copy is identical to the repository (`databricks workspace export ... | diff - <file>`)
-- [ ] T008 Following the quota conventions, run a dry run with `databricks pipelines start-update 8d51ac7a-02be-4ce2-8afd-f4f263e448dd --validate-only --profile databricks-free` and poll it to `COMPLETED`. The events must define `vw_silver_eventos_api` and `tb_acesso`. On a lateral-alias error, apply the allowed fallback, upload again and repeat. Report any other error
-- [ ] T009 Following the quota conventions, run the update with `databricks pipelines start-update 8d51ac7a-02be-4ce2-8afd-f4f263e448dd --profile databricks-free`, poll it to `COMPLETED` and record its `update_id`. If it fails after creating `tb_acesso`, and a fix changes the columns, **stop and ask the owner** to approve a refresh of `workspace.silver.tb_acesso` only. Confirm that `SHOW TABLES IN workspace.silver` lists `tb_acesso`
+- [X] T008 Following the quota conventions, run a dry run with `databricks pipelines start-update 8d51ac7a-02be-4ce2-8afd-f4f263e448dd --validate-only --profile databricks-free` and poll it to `COMPLETED`. The events must define `vw_silver_eventos_api` and `tb_acesso`. On a lateral-alias error, apply the allowed fallback, upload again and repeat. Report any other error
+- [X] T009 Following the quota conventions, run the update with `databricks pipelines start-update 8d51ac7a-02be-4ce2-8afd-f4f263e448dd --profile databricks-free`, poll it to `COMPLETED` and record its `update_id`. If it fails after creating `tb_acesso`, and a fix changes the columns, **stop and ask the owner** to approve a refresh of `workspace.silver.tb_acesso` only. Confirm that `SHOW TABLES IN workspace.silver` lists `tb_acesso`
 
 **Checkpoint**: `tb_acesso` exists and is filled
 
@@ -368,3 +368,12 @@ and `curso_uuid` are computed only in the view. `FAIL UPDATE` appears twice in
 
 **T007**: uploaded; all eight workspace files are identical to the repository, and
 `02_silver/` lists five `FILE`s.
+
+**T008**: the dry run `e79cfdfb-bd1a-4b2f-9f43-6f6f0047cc3d` (15:48 UTC) **COMPLETED**.
+It defined `vw_silver_eventos_api` as a view and `tb_acesso` as a streaming table with an
+append flow, so both lateral aliases were accepted. The CLI's real update could not start
+at 15:52 (`Pipeline resources are being provisioned`). The owner had started update
+`080eab80-...` from the UI at 15:49, which failed on the quota, and then the UI's
+`START_RESOURCES` warm-up `a503afae-...` ran and completed at 15:52.
+
+**T009**: update `cee901f0-476d-4411-8dbe-2219bfe4fca0` (CLI, 15:53 UTC) **COMPLETED**.

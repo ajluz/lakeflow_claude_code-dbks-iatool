@@ -25,10 +25,14 @@ a one-big-table for analytics.
 lakeflow/
 ├── src/                     Project code: what the pipeline deploys and runs
 │   └── pipeline/            Pipeline source (SQL), one file per dataset
-│       └── 01_bronze/       Auto Loader ingestion into streaming tables
-│           ├── dados_api.sql       Site events, from landing/stream/ (JSON)
-│           ├── dados_files.sql     Corporate sales, from landing/files/ (CSV)
-│           └── dados_database.sql  Course catalog changes, from landing/database/ (CSV)
+│       ├── 01_bronze/       Auto Loader ingestion into streaming tables
+│       │   ├── 01_dados_api.sql       Site events, from landing/stream/ (JSON)
+│       │   ├── 02_dados_files.sql     Corporate sales, from landing/files/ (CSV)
+│       │   └── 03_dados_database.sql  Course catalog changes, from landing/database/ (CSV)
+│       └── 02_silver/       Validation and quarantine (API source so far)
+│           ├── 01_vw_bronze_dados_api.sql    Boundary view: bronze events minus source_file_name, _rescued_data
+│           ├── 02_temp_tb_validacao_api.sql  Private validation table: 3 rules, fl_registro_invalido
+│           └── 03_tb_quarentena.sql          Quarantine of the flagged API events
 ├── explorations/            Auxiliary code: setup, generators and notebooks
 │   ├── setup/               Environment preparation, run by hand in step order
 │   │   ├── 01_schemas.sql                Creates the schemas and applies the access rule
@@ -44,9 +48,11 @@ lakeflow/
     └── lakeflow_architecture.png   Screenshot of the pipeline graph
 ```
 
-The numeric prefix of each layer folder under `src/pipeline/` is for reading
+The numeric prefix of each layer folder under `src/pipeline/`, and of each file
+inside it (`NN_<dataset>.sql`, numbered from `01` per folder), is for reading
 order only. A declarative pipeline resolves the execution order from the
-dependencies between datasets. The silver and gold layers are not built yet.
+dependencies between datasets. Silver holds the API validation and quarantine so
+far; gold is not built yet.
 
 ## At a glance
 
@@ -54,7 +60,7 @@ dependencies between datasets. The silver and gold layers are not built yet.
 |---|---|
 | Catalog / schemas | `workspace.bronze`, `workspace.silver`, `workspace.gold` |
 | Landing volume | `/Volumes/workspace/bronze/landing/{stream,files,database}` |
-| Pipeline datasets | 3 bronze streaming tables; silver and gold not built yet |
+| Pipeline datasets | 3 bronze streaming tables; in silver, 1 streaming view, 1 private streaming table and 1 streaming table; gold not built yet |
 | Created outside the pipeline | `workspace.gold.dim_tempo` (by `functions.py`) |
 | Target environment | Databricks Free Edition (streaming simulated with `availableNow`) |
 

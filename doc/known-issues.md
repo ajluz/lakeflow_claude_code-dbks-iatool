@@ -11,13 +11,8 @@ The pipeline targets the `workspace` catalog, but a few places still reference
 
 | Location | Reference |
 |---|---|
-| [04_tb_quarentena.sql:4](../code_tips/02_silver/04_tb_quarentena.sql#L4) | reads `dataslight_dev.silver.temp_tb_validacao_api` |
 | [user_case.ipynb](../explorations/user_case.ipynb), last two queries | `dataslight_dev.gold.*` |
 | [clean_up_env.ipynb](../explorations/clean_up_env.ipynb) | `USE dataslight_dev.*` and `/Volumes/dataslight_dev/...` |
-
-The quarantine table is the one that matters for the pipeline: its source does
-not resolve to the validation table defined in the same pipeline unless that
-catalog also exists.
 
 ## File sales get a wrong paid amount
 

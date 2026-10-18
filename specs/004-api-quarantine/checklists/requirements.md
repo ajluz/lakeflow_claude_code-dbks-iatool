@@ -31,8 +31,11 @@
 
 ## Notes
 
-- Clarification resolved (2026-10-18): the validation table is clustered, not
-  partitioned, by `fl_registro_invalido` (option A), in line with constitution Principle V.
+- Clarification resolved (2026-10-18): clustering (option A) was chosen first, then
+  reverted after the platform rejected `CLUSTER BY` on a `BOOLEAN` column
+  (`DELTA_CLUSTERING_COLUMNS_DATATYPE_NOT_SUPPORTED`). The owner decided to partition by
+  `fl_registro_invalido`; this deviation from Principle V is justified in the plan's
+  Complexity Tracking.
 - Table, column and rule names, the field paths and the placeholder values appear in the
   spec because the request fixes them and they are the contract later features rely on, as
   in features 001–003. FR-017 names SQL and Lakeflow because the constitution makes them

@@ -1,23 +1,41 @@
 <!--
 SYNC IMPACT REPORT (scratch material for review; remove before committing)
 
-Version change: 1.4.0 → 1.5.0
-Bump rationale: MINOR. The "Repository layout" constraint is redefined: v1.4.0 put all
-code under src/; v1.5.0 splits code into project code (src/) and auxiliary code
-(explorations/). This reverses part of v1.4.0, but it changes a constraint, not a Core
-Principle, and no principle is removed or redefined, so it is not MAJOR.
+Version change: 1.5.0 → 1.6.0
+Bump rationale: MINOR. Three rules are added (numbered scripts per zone; a boundary view
+before each zone change; bronze and silver declared as streaming only) and Principle IV
+is narrowed by owner decision: the
+`_rescued_data` quarantine clauses are removed and quarantine preservation is redefined
+relative to the boundary view. No principle is removed or renamed, and the removal
+relaxes an obligation rather than reversing one. MAJOR was considered, because a clause
+of Principle IV is redefined; MINOR was chosen because every principle keeps its intent
+and no compliant dataset becomes wrong in meaning, only in shape.
 
-Modified principles:
-- II. SQL-Only Declarative Pipelines (title unchanged): the folder for generators and
-  exploration is `explorations/` again (was `src/explorations/` in v1.4.0). No rule
-  changed.
+Modified principles (titles unchanged):
+- I. Medallion Architecture: new rule that every read across a zone boundary goes
+  through a temporary view excluding `source_file_name` and `_rescued_data`, and that
+  silver and gold tables never carry those columns. The `gold.dim_curso` exception now
+  reads the bronze change feed through such a view.
+- IV. Quarantine, Never Silently Discard: the validation table reads the boundary view.
+  "Rows whose `_rescued_data` is not null MUST be routed to quarantine" and
+  "`_rescued_data` MUST NOT be discarded before that check" are removed (owner,
+  2026-10-18): rescued content stays visible only in bronze. A quarantine row preserves
+  the record as delivered by the boundary view. New rule (owner, 2026-10-18): a
+  quarantine table carries every column of its validation table, flag and validation
+  `data_carga` included, and adds `data_carga_quarentena`.
+- V. Dataset Types and Flows: files are named `NN_<dataset>.sql`, numbered per zone
+  folder. Bronze and silver datasets are all declared as streaming (streaming tables, or
+  temporary views reading `STREAM(...)`); materialized views are forbidden there. The
+  pipeline's execution mode decides stream or batch. Gold keeps materialized views for
+  full-scan results. Combining logic in silver must be streaming (append flows,
+  `AUTO CDC`, stream-static joins); full recomputation belongs in gold. Private
+  materialized views are allowed in gold only. Owner request, 2026-10-18; the request text
+  ended at "except for the gold layer that", read here as "gold may use materialized
+  views".
 
 Modified sections:
-- Platform and Technology Constraints, "Repository layout": `src/` now holds only project
-  code (the pipeline, in `src/pipeline/`); the top-level `explorations/` holds all
-  auxiliary code, including initial setup in `explorations/setup/`. `src/setup/` and
-  `src/explorations/` are no longer valid locations. A test is given for telling the two
-  kinds apart.
+- Platform and Technology Constraints, "Repository layout": the numbering rule per zone
+  folder. "Naming": boundary views are named `vw_<source zone>_<dataset>`.
 
 Added sections: none
 Removed sections: none
@@ -25,14 +43,28 @@ Removed sections: none
 Dependent templates: not modified by this command; they read the constitution at runtime.
 
 Follow-up TODOs (existing files that do not comply; nothing was moved):
-- `src/setup/01_schemas.sql` and `src/setup/01_schemas_verify.sql` belong in
-  `explorations/setup/`. They were moved to `src/setup/` on 2026-10-11 to satisfy v1.4.0.
-  Their header comments, `doc/getting-started.md`, `doc/README.md`, and the plan,
-  research, quickstart, contract and tasks of `specs/001-medallion-schemas/` reference
-  `src/setup/`.
-- `explorations/` (functions.py, user_case.ipynb, clean_up_env.ipynb) is already where
-  this version requires; the v1.4.0 follow-up to move it is cancelled.
-- `doc/` still describes `code_tips/`; future pipeline SQL goes to `src/pipeline/`.
+- `src/pipeline/01_bronze/dados_api.sql`, `dados_files.sql`, `dados_database.sql` →
+  rename to `01_dados_api.sql`, `02_dados_files.sql`, `03_dados_database.sql`. Renaming
+  changes no dataset (the pipeline globs `src/pipeline/**`), but every reference must
+  follow: `doc/pipeline-reference.md`, `doc/architecture.md`, `doc/README.md`,
+  `doc/getting-started.md` if it names them, and `specs/003-bronze-ingestion/`
+  (plan, contract, tasks), which may be left as a historical record.
+- Feature 004 (`specs/004-api-quarantine/`, in progress, nothing published yet):
+  `src/pipeline/02_silver/temp_tb_validacao_api.sql` must read a new boundary view
+  `vw_bronze_dados_api` (its own numbered file), lose the `registro_nao_conforme` rule,
+  and be renumbered. The files become `01_vw_bronze_dados_api.sql`,
+  `02_temp_tb_validacao_api.sql` and `03_tb_quarentena.sql`. Update spec (FR-004 and the
+  rules table, US2, edge cases, assumptions), plan (Constitution Check against v1.6.0),
+  research (Decision 1 reverses: the view is now required; Decision 3 loses rule 4),
+  data model, contract, quickstart (queries without `source_file_name`/`_rescued_data`
+  and without rule 4) and tasks.
+- In the workspace, the private table of feature 004 has a backing table with no rows,
+  created by the update of 14:40 UTC with the old column set. Its schema changes, so the
+  next update may need a refresh of that table only, which needs the owner's approval.
+- Streaming-only bronze and silver: feature 004 already complies (one streaming temporary
+  view, two streaming tables). `doc/pipeline-reference.md` still describes the earlier
+  pipeline's silver; any silver dataset rebuilt from it must be streaming, so a
+  materialized view there must be redesigned or moved to gold.
 - No deferred placeholders.
 -->
 
@@ -55,8 +87,17 @@ Every dataset belongs to exactly one layer, and data moves only forward through 
   the exception below.
 - A dataset MUST NOT read from a later layer, and a layer MUST NOT be skipped, apart from
   the exception below.
+- **Boundary views.** Before each zone change, the next zone MUST read the earlier zone
+  through a temporary view that excludes the bronze lineage columns `source_file_name` and
+  `_rescued_data`. Those columns belong to bronze only: silver and gold tables MUST NOT
+  carry them. The view is named `vw_<source zone>_<dataset>` (for example
+  `vw_bronze_dados_api`), lives in its own file in the reading zone's folder, and does
+  nothing else: no filters, casts, renames or rules. Because only bronze carries those
+  columns, every read of a bronze table goes through such a view. `processing_time` is not
+  excluded by this rule.
 - **Exception: SCD type 2 dimensions read the bronze change feed.** `gold.dim_curso` reads
-  `bronze.dados_database` directly. Its silver counterpart, `silver.tb_curso`, is an SCD
+  `bronze.dados_database` through its boundary view, `vw_bronze_dados_database`, instead of
+  reading silver. Its silver counterpart, `silver.tb_curso`, is an SCD
   type 1 target: it keeps only the latest version of each course and is updated and
   deleted in place, so it holds neither the history nor the ordered change events that
   `AUTO CDC ... STORED AS SCD TYPE 2` needs. The exception is bounded as follows:
@@ -142,21 +183,25 @@ A record rejected by a quality rule is kept, unchanged, where it can be inspecte
 replayed.
 
 - Validation of a source happens once, at the bronze-to-silver boundary, in a private
-  validation table that adds a Boolean flag column (`fl_registro_invalido`) computed from
-  the rejection rules.
+  validation table that reads the source's boundary view (Principle I) and adds a Boolean
+  flag column (`fl_registro_invalido`) computed from the rejection rules.
 - The same rules MUST also be declared on that validation table as warn expectations, so
   that every rejection is counted. The flag and the expectations MUST encode the same
   predicates; changing one without the other is a violation.
 - Flagged rows MUST be written to a quarantine streaming table in silver
   (`tb_quarentena`, or `tb_quarentena_<source>` when sources differ in shape). Conformed
   silver tables MUST read only rows where the flag is false.
-- A quarantine row MUST preserve the original record without transformation, and MUST
-  record which rule or rules rejected it.
+- A quarantine row MUST preserve the record as delivered by the boundary view: every
+  source column, unchanged, without the lineage columns the view excludes. It MUST record
+  which rule or rules rejected it.
+- A quarantine table MUST carry every column of its validation table, with nothing
+  excluded or replaced: the delivered record, the names of the failed rules, the flag,
+  `origem` and the validation table's `data_carga`. It adds its own load time as
+  `data_carga_quarentena`. All the evidence of a data issue is then in one row, without a
+  join back to the private validation table.
 - `ON VIOLATION DROP ROW` is permitted only when the dropped rows are also routed to a
   quarantine table by the same predicate. Dropping a row that exists nowhere but bronze is
   a violation.
-- Rows whose `_rescued_data` is not null MUST be routed to quarantine. `_rescued_data`
-  MUST NOT be discarded before that check.
 - For each source, rows in bronze MUST equal rows conformed plus rows quarantined, apart
   from exclusions documented in `doc/pipeline-reference.md`.
 
@@ -168,13 +213,24 @@ option to reprocess once the cause is fixed.
 
 The dataset type follows from the nature of the source, not from habit.
 
-- A source that grows incrementally (files in a volume, another streaming table) MUST feed
-  a **streaming table** read with `STREAM(...)`.
-- A full-scan result (joins across tables, aggregations, gold facts and denormalized
-  tables) MUST be a **materialized view** read without `STREAM`.
-- Intermediate logic MUST default to a **temporary view**. A private streaming table or
-  private materialized view is allowed only when materializing once avoids significant
-  reprocessing, as with the validation table in Principle IV.
+- **Bronze and silver are streaming.** Every dataset in bronze and silver MUST be declared
+  as streaming: a **streaming table** (`CREATE OR REFRESH [PRIVATE] STREAMING TABLE`) or a
+  **temporary view** whose query reads `STREAM(...)` or `STREAM read_files(...)`.
+  Materialized views MUST NOT be used in bronze or silver. Whether a dataset runs as a
+  stream or as a batch is decided by the pipeline's execution mode (triggered or
+  continuous), not by the dataset type.
+- Silver logic that combines data MUST be expressed in streaming form: append flows for
+  several sources, `AUTO CDC INTO` for change feeds, and stream-static joins against
+  reference data. A result that must be recomputed in full on every update (aggregations,
+  joins across growing tables) belongs in gold.
+- **Gold** is the exception. A full-scan result (joins across tables, aggregations, facts
+  and denormalized tables) MUST be a **materialized view** read without `STREAM`. A gold
+  dataset fed by a change feed, such as an `AUTO CDC ... STORED AS SCD TYPE 2` dimension,
+  is a streaming table.
+- Intermediate logic MUST default to a **temporary view**. A private streaming table (in
+  bronze or silver) or a private materialized view (in gold only) is allowed only when
+  materializing once avoids significant reprocessing, as with the validation table in
+  Principle IV.
 - File ingestion MUST use Auto Loader through `STREAM read_files(...)`.
 - Several streaming sources feeding one table MUST use one append flow per source
   (`CREATE FLOW ... AS INSERT INTO ... BY NAME`). `UNION` across streaming sources MUST NOT
@@ -186,11 +242,15 @@ The dataset type follows from the nature of the source, not from habit.
 - New datasets MUST NOT use `PARTITIONED BY`. Where physical layout matters, use
   `CLUSTER BY`.
 - Each file MUST define one target dataset together with its flows, and MUST be named
-  after that dataset.
+  `NN_<dataset>.sql`: a two-digit prefix, sequential from `01` within its zone folder in
+  reading order, followed by the dataset's name. The prefix orders reading only; execution
+  order still comes from dependencies (Principle II).
 
-**Rationale**: the wrong pairing either fails validation or yields results that are
-quietly incorrect, such as an aggregate in a streaming table that never recomputes when its
-source changes.
+**Rationale**: declaring bronze and silver as streaming gives every dataset incremental
+state, so each row is processed once and the pipeline's execution mode alone decides
+latency and cost. Keeping full recomputation in gold confines the one case where streaming
+is wrong: an aggregate in a streaming table that never recomputes when its source
+changes.
 
 ### VI. Record Source and Hash Keys in Silver
 
@@ -307,12 +367,14 @@ loss with an explicit "unknown".
   NOT be created at the repository root or in any other top-level folder.
   - `src/` holds the project's own code, meaning what is deployed and run as the product:
     the pipeline SQL, in `src/pipeline/` under `01_bronze/`, `02_silver/`, and `03_gold/`.
+    Every script in a zone folder carries the `NN_` prefix of Principle V, numbered from
+    `01` in each folder.
     The pipeline's source path points to `src/pipeline/` and nowhere else. A new kind of
     project code gets a new subfolder of `src/`, named in the feature's plan.
   - `explorations/` holds all auxiliary code, meaning anything that supports the project
     without being part of the deployed pipeline: exploration notebooks, data generators,
     clean-up notebooks, and the initial environment setup. Setup scripts live in
-    `explorations/setup/`, numbered in the order they run.
+    `explorations/setup/`, numbered with the same `NN_` prefix in the order they run.
   - Auxiliary code MUST NOT be placed under `src/`, and project code MUST NOT be placed
     under `explorations/`. When it is unclear which kind a file is, the test is whether
     the pipeline needs the file to be deployed in order to run: if not, it is auxiliary.
@@ -321,7 +383,8 @@ loss with an explicit "unknown".
     `pyproject.toml`, `uv.lock`, `.gitignore`) stay at the root. These are not code for the
     purposes of this rule.
 - **Naming**: object and column names are in Portuguese, lowercase snake_case. Silver
-  tables use the prefix `tb_`, temporary views `vw_`, private staging tables `temp_tb_`,
+  tables use the prefix `tb_`, temporary views `vw_` (boundary views
+  `vw_<source zone>_<dataset>`), private staging tables `temp_tb_`,
   dimensions `dim_`, facts `fato_`, and one-big-tables `obt_`. Flows are named
   `<layer>_<target>[_<source>]_flow`.
 - **Key and lineage columns**: hash keys end in `_uuid`, surrogate keys start with `sk_`,
@@ -376,4 +439,4 @@ this repository.
   `databricks-pipelines` skill gives syntax and patterns. Both inform implementation;
   neither overrides this document.
 
-**Version**: 1.5.0 | **Ratified**: 2026-10-10 | **Last Amended**: 2026-10-11
+**Version**: 1.6.0 | **Ratified**: 2026-10-10 | **Last Amended**: 2026-10-18

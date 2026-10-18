@@ -113,10 +113,11 @@ The graph as rendered by the pipeline UI:
 |---|---|
 | Auto Loader ingestion (`cloud_files`) with schema inference | [01_bronze/](../code_tips/01_bronze/) |
 | File metadata column (`_metadata.file_path`) | [01_bronze/](../code_tips/01_bronze/) |
-| Temporary streaming views | [01_vw_bronze_dados_api.sql](../code_tips/02_silver/01_vw_bronze_dados_api.sql) and the other `vw_` files |
-| Temporary (pipeline-private) streaming table | [03_temp_tb_validacao_api.sql](../code_tips/02_silver/03_temp_tb_validacao_api.sql) |
-| Expectations that only record violations | [03_temp_tb_validacao_api.sql](../code_tips/02_silver/03_temp_tb_validacao_api.sql) |
-| Quarantine pattern (flag column + split) | [03_temp_tb_validacao_api.sql](../code_tips/02_silver/03_temp_tb_validacao_api.sql), [04_tb_quarentena.sql](../code_tips/02_silver/04_tb_quarentena.sql) |
+| Temporary streaming views (boundary view excluding `source_file_name`, `_rescued_data`) | [01_vw_bronze_dados_api.sql](../src/pipeline/02_silver/01_vw_bronze_dados_api.sql) and the other `vw_` files |
+| Temporary (pipeline-private) streaming table | [02_temp_tb_validacao_api.sql](../src/pipeline/02_silver/02_temp_tb_validacao_api.sql) |
+| Expectations that only record violations | [02_temp_tb_validacao_api.sql](../src/pipeline/02_silver/02_temp_tb_validacao_api.sql) |
+| Quarantine pattern (flag column + split) | [02_temp_tb_validacao_api.sql](../src/pipeline/02_silver/02_temp_tb_validacao_api.sql), [03_tb_quarentena.sql](../src/pipeline/02_silver/03_tb_quarentena.sql) |
+| Partitioning by a Boolean flag (`PARTITIONED BY`; `CLUSTER BY` rejects `BOOLEAN`) | [02_temp_tb_validacao_api.sql](../src/pipeline/02_silver/02_temp_tb_validacao_api.sql) |
 | Expectations with `ON VIOLATION DROP ROW` | [05_tb_acesso.sql](../code_tips/02_silver/05_tb_acesso.sql), [06_tb_usuario.sql](../code_tips/02_silver/06_tb_usuario.sql) |
 | Combining sources with `UNION ALL` in one query | [06_tb_usuario.sql](../code_tips/02_silver/06_tb_usuario.sql) |
 | Multiple append flows into one table (`CREATE FLOW ... INSERT INTO ... BY NAME`) | [09_tb_venda.sql](../code_tips/02_silver/09_tb_venda.sql) |

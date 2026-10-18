@@ -1,6 +1,6 @@
 ---
 
-description: "Task list for feature 004-api-quarantine"
+description: "Task list for feature 004-api-quarantine (revised for constitution v1.6.0)"
 ---
 
 # Tasks: Validation and Quarantine of API Events
@@ -14,6 +14,12 @@ run the matching step of quickstart.md against the workspace.
 
 **Organization**: Tasks are grouped by user story to enable independent implementation and testing of each story.
 
+**Revision (2026-10-18)**: regenerated after the owner amended the constitution to v1.6.0.
+The amendment added numbered files per zone, a boundary view before each zone change, and
+streaming-only bronze and silver, and removed the rescued-data rule. Tasks already done
+under the first list are kept as done where they still hold. The previous IDs are in the
+Implementation notes, which are preserved below.
+
 ## Format: `[ID] [P?] [Story] Description`
 
 - **[P]**: Can run in parallel (different files, no dependencies)
@@ -22,13 +28,13 @@ run the matching step of quickstart.md against the workspace.
 
 ## Path Conventions
 
-- Pipeline SQL (project code): `src/pipeline/02_silver/`
+- Pipeline SQL (project code): `src/pipeline/01_bronze/` and `src/pipeline/02_silver/`
 - Documentation: `doc/`
 - All paths below are relative to the repository root
 
 ## Conventions for every task
 
-- **The four rules**, fixed by data-model.md. They appear twice in the validation file:
+- **The three rules**, fixed by data-model.md. They appear twice in the validation file:
   once as `CONSTRAINT` clauses, once as `CASE` lines. Both lists use this text and this
   order, character for character:
 
@@ -37,21 +43,29 @@ run the matching step of quickstart.md against the workspace.
   | 1 | `curso_invalido` | `payload.info_produto.product_name IS NULL OR payload.info_produto.product_name != 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'` |
   | 2 | `valor_invalido` | `payload.info_pagamento.valor IS NULL OR payload.info_pagamento.valor != '0.00'` |
   | 3 | `forma_pagamento_invalido` | `payload.info_pagamento.forma_pagamento IS NULL OR payload.info_pagamento.forma_pagamento != '-----'` |
-  | 4 | `registro_nao_conforme` | `_rescued_data IS NULL` |
 
   The placeholder in rule 1 is exactly 32 lowercase `x`.
 
-- **Validation statement shape**, fixed by the contract. One short header comment in
-  Portuguese, then exactly this statement, with nothing added:
+- **Boundary view shape**: one short header comment in Portuguese, then exactly:
+
+  ```sql
+  CREATE TEMPORARY VIEW vw_bronze_dados_api
+  COMMENT '<description in Portuguese>'
+  AS
+  SELECT
+    * EXCEPT (source_file_name, _rescued_data)
+  FROM STREAM(workspace.bronze.dados_api);
+  ```
+
+- **Validation statement shape**: one short header comment in Portuguese, then exactly:
 
   ```sql
   CREATE OR REFRESH PRIVATE STREAMING TABLE workspace.silver.temp_tb_validacao_api (
     CONSTRAINT curso_invalido           EXPECT (<rule 1>),
     CONSTRAINT valor_invalido           EXPECT (<rule 2>),
-    CONSTRAINT forma_pagamento_invalido EXPECT (<rule 3>),
-    CONSTRAINT registro_nao_conforme    EXPECT (<rule 4>)
+    CONSTRAINT forma_pagamento_invalido EXPECT (<rule 3>)
   )
-  CLUSTER BY (fl_registro_invalido)
+  PARTITIONED BY (fl_registro_invalido)
   COMMENT '<description in Portuguese>'
   TBLPROPERTIES ("quality" = "silver")
   AS
@@ -61,19 +75,17 @@ run the matching step of quickstart.md against the workspace.
       array(
         CASE WHEN NOT (<rule 1>) THEN 'curso_invalido' END,
         CASE WHEN NOT (<rule 2>) THEN 'valor_invalido' END,
-        CASE WHEN NOT (<rule 3>) THEN 'forma_pagamento_invalido' END,
-        CASE WHEN NOT (<rule 4>) THEN 'registro_nao_conforme' END
+        CASE WHEN NOT (<rule 3>) THEN 'forma_pagamento_invalido' END
       ),
       r -> r IS NOT NULL
     ) AS regras_violadas,
     size(regras_violadas) > 0 AS fl_registro_invalido,
     'API' AS origem,
     current_timestamp() AS data_carga
-  FROM STREAM(workspace.bronze.dados_api);
+  FROM STREAM(vw_bronze_dados_api);
   ```
 
-- **Quarantine statement shape**, fixed by the contract. One short header comment in
-  Portuguese, then exactly this statement:
+- **Quarantine statement shape**: one short header comment in Portuguese, then exactly:
 
   ```sql
   CREATE OR REFRESH STREAMING TABLE workspace.silver.tb_quarentena (
@@ -83,75 +95,72 @@ run the matching step of quickstart.md against the workspace.
   TBLPROPERTIES ("quality" = "silver")
   AS
   SELECT
-    * EXCEPT (fl_registro_invalido, data_carga),
-    current_timestamp() AS data_carga
+    *,
+    current_timestamp() AS data_carga_quarentena
   FROM STREAM(workspace.silver.temp_tb_validacao_api)
   WHERE fl_registro_invalido;
   ```
 
-- **Forbidden in either file**: `ON VIOLATION` (no `DROP ROW`, no `FAIL UPDATE`),
-  `PARTITIONED BY`, `CAST`, renames or `EXCEPT` of a bronze column, `DISTINCT`,
-  `GROUP BY`, joins, a `WHERE` in the validation file, a temporary view between bronze and
-  validation, `CREATE FLOW`, `LIVE`, `CREATE OR REPLACE`, `APPLY CHANGES`, any catalog other
-  than `workspace`, and any unqualified table name.
-- **Allowed fallbacks after a dry run, and only these** (research.md Decision 2; contract):
-  - If the lateral alias `size(regras_violadas)` is rejected, build `regras_violadas` in a
-    subquery in the `FROM` clause over `STREAM(workspace.bronze.dados_api)`, and derive the
-    flag, `origem` and `data_carga` in the outer `SELECT`. The resulting columns and their
-    order do not change.
-  - If the three-level name of the private table is rejected, or `CLUSTER BY` on a private
-    table is rejected, **stop and report to the owner**. Do not drop the qualifier, do not
-    remove `PRIVATE`, and never switch to `PARTITIONED BY`.
-- **Why the validation file is complete from its first run**: a column added to a
-  streaming table after rows were written would be null on those rows, and
-  `fl_registro_invalido` must never be null (FR-003). So `regras_violadas`, the flag,
-  `origem`, `data_carga` and the four constraints all go in the first version of the
-  file.
-- **Running against the workspace**: ask the owner which CLI profile to use before the
-  first command, and pass `--profile <profile>` every time. Never choose a profile on the
-  owner's behalf (feature 003 used `databricks-free`, but ask again). The pipeline is
-  `lakeflow_dataslight_dev`, id `8d51ac7a-02be-4ce2-8afd-f4f263e448dd` (feature 003); confirm
-  it in T002.
-- **SQL queries**: run them with
-  `databricks experimental aitools tools query "<sql>" --profile <profile> --output json`
-  or in the workspace SQL editor. Record every number the tasks ask for in the
-  Implementation notes at the end of this file.
-- **Free Edition quota**: before every `start-update`, stop the SQL warehouse used for
-  queries (`databricks warehouses list --profile <profile>`, then
-  `databricks warehouses stop <warehouse_id> --profile <profile>`) and wait about a minute.
-  Otherwise the update can fail with `RESOURCE_EXHAUSTED` (feature 003 implementation
-  notes).
+- **Forbidden**: see the contract's list. In short:
+  - `source_file_name` or `_rescued_data` in a silver table;
+  - a read of bronze other than in the view;
+  - anything in the view beyond excluding those two columns;
+  - `ON VIOLATION`;
+  - `CLUSTER BY`;
+  - `PARTITIONED BY` outside the validation table;
+  - a materialized view;
+  - `CAST` or renames of delivered columns;
+  - `DISTINCT`, `GROUP BY`, joins, or a `WHERE` in the view or the validation table;
+  - `CREATE FLOW`, `LIVE`, `CREATE OR REPLACE`, `APPLY CHANGES`;
+  - a catalog other than `workspace`;
+  - a file without its `NN_` prefix.
+- **Allowed fallback, and only this one**: if the lateral alias `size(regras_violadas)` is
+  rejected, build `regras_violadas` in a subquery in the `FROM` clause over
+  `STREAM(vw_bronze_dados_api)`. Then derive the flag, `origem` and `data_carga` in the
+  outer `SELECT`. Report anything else to the owner.
+- **Running against the workspace**: the owner's profile is `databricks-free`; pass
+  `--profile databricks-free` every time. The pipeline is `lakeflow_dataslight_dev`, id
+  `8d51ac7a-02be-4ce2-8afd-f4f263e448dd`.
+- **SQL queries**: `databricks experimental aitools tools query "<sql>" --profile
+  databricks-free --output csv`. Record every number the tasks ask for in the
+  Implementation notes.
+- **Free Edition quota**: SQL queries wake the SQL warehouse, which counts against the
+  same serverless quota as the pipeline. Before every `start-update`:
+  1. stop the warehouse (`databricks warehouses stop f796ffb64302b6ba --profile databricks-free`);
+  2. make sure no update of the owner's is running;
+  3. wait about 4 minutes after the previous update ended.
+
+  A start that fails within seconds with `RESOURCE_EXHAUSTED` is the quota, not the code.
 - **Polling**: after `start-update`, poll `databricks pipelines get-update <pipeline_id>
-  <update_id> --profile <profile>` and read `.update.state` until `COMPLETED`, `FAILED` or
-  `CANCELED`. On `FAILED`, read `error.exceptions[0].message` of the `ERROR` events from
-  `databricks pipelines list-pipeline-events <pipeline_id> --profile <profile>` and fix the
-  cause. Do not simply run again.
-- **Never** pass `--full-refresh` or `full_refresh_selection` in these tasks. Both tables
-  are new, so a normal update fills them from the start of bronze.
-- **Event log queries** are those of quickstart.md step 4, with `<pipeline_id>` and the
-  `<update_id>` of the update being checked filled in.
+  <update_id> --profile databricks-free` and read `.update.state` until `COMPLETED`, `FAILED`
+  or `CANCELED`. On `FAILED`, read the `ERROR` events from `databricks pipelines
+  list-pipeline-events` and fix the cause. Do not simply run again.
+- **Never** pass `--full-refresh` or `full_refresh_selection` without the owner's explicit
+  approval for that run.
+- **Event log queries** are those of quickstart.md step 4.
 
 ---
 
 ## Phase 1: Setup (Shared Infrastructure)
 
-**Purpose**: the silver folder and confirmation that the existing pipeline is the one to extend
+**Purpose**: folders, numbering and the pipeline to extend
 
 - [X] T001 Create the folder `src/pipeline/02_silver/`
-- [X] T002 Ask the owner for the CLI profile. Then, changing nothing: run `databricks pipelines get 8d51ac7a-02be-4ce2-8afd-f4f263e448dd --profile <profile>` and confirm the name is `lakeflow_dataslight_dev`, `catalog` is `workspace`, `serverless` is `true`, and `libraries` is the single glob `/Workspace/Users/arthur.luz@dataslight.com.br/lakeflow_dev/src/pipeline/**`; confirm its latest update is `COMPLETED`. If any of this differs, stop and ask the owner. `explorations/setup/03_pipeline_dev.json` is not changed by this feature
+- [X] T002 Confirm the pipeline with `databricks pipelines get 8d51ac7a-02be-4ce2-8afd-f4f263e448dd --profile databricks-free`: name `lakeflow_dataslight_dev`, catalog `workspace`, serverless, development, single glob `/Workspace/Users/arthur.luz@dataslight.com.br/lakeflow_dev/src/pipeline/**`. `explorations/setup/03_pipeline_dev.json` is not changed by this feature
+- [X] T003 Rename the bronze files with `git mv`, content unchanged: `src/pipeline/01_bronze/dados_api.sql` → `src/pipeline/01_bronze/01_dados_api.sql`, `dados_files.sql` → `02_dados_files.sql`, `dados_database.sql` → `03_dados_database.sql`. `git diff --cached -M --stat` must show pure renames
 
 ---
 
 ## Phase 2: Foundational (Blocking Prerequisites)
 
-**Purpose**: the facts every story depends on, read before any code is written
+**Purpose**: the facts every story depends on
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [X] T003 [P] Read the `databricks-pipelines` skill at `.claude/skills/databricks-pipelines/SKILL.md` with `references/streaming-table-sql.md` and `references/expectations-sql.md`, as the constitution's workflow requires before pipeline code is written. Note in the Implementation notes any point where the skill disagrees with contracts/silver-validation-quarantine.md; if one exists, stop and raise it with the owner
-- [X] T004 [P] Run `DESCRIBE TABLE workspace.bronze.dados_api` and confirm the columns are `processing_time`, `source_file_name`, `access_date`, `access_point`, `ip_address`, `payload`, `_rescued_data`. Then run `SELECT typeof(payload.info_pagamento.valor), typeof(payload.info_produto.product_name), typeof(payload.info_pagamento.forma_pagamento) FROM workspace.bronze.dados_api WHERE payload.info_pagamento IS NOT NULL LIMIT 1`. Record the three types in the Implementation notes (research.md Decision 4)
-- [X] T005 Run the expected-counts query of quickstart.md step 1 against `workspace.bronze.dados_api` and record `total`, `curso_invalido`, `valor_invalido`, `forma_pagamento_invalido`, `registro_nao_conforme` and `invalidos` in the Implementation notes. If `curso_invalido`, `valor_invalido` or `forma_pagamento_invalido` is 0, stop and report it to the owner with the type recorded in T004. Do not change any literal on your own
-- [X] T006 [P] Confirm nothing is in the way, changing nothing: `databricks tables list workspace silver --profile <profile>` shows no `tb_quarentena` and no `temp_tb_validacao_api`. If either exists, stop and ask the owner how to proceed
+- [X] T004 [P] Read the `databricks-pipelines` skill: `SKILL.md`, `references/streaming-table-sql.md`, `references/expectations-sql.md`, `references/temporary-view-sql.md`. Note any disagreement with contracts/silver-validation-quarantine.md
+- [X] T005 [P] Confirm the bronze columns of `workspace.bronze.dados_api` (`processing_time`, `source_file_name`, `access_date`, `access_point`, `ip_address`, `payload`, `_rescued_data`), and the types of the three rule fields. `payload.info_pagamento.valor` is `DOUBLE`
+- [X] T006 Re-run the expected-counts query of quickstart.md step 1 (three rules) on `workspace.bronze.dados_api`, because the owner fully refreshed bronze on 2026-10-18 after the first count. Record `total`, the three rule counts and `invalidos`. If any rule count is 0, stop and report. Then stop the SQL warehouse (Conventions)
+- [X] T007 [P] Confirm that no published silver table exists yet (`SHOW TABLES IN workspace.silver` returns no rows). The private table's empty backing table from the first attempt is expected and is handled in T015
 
 **Checkpoint**: the rules are known to catch real rows, and the target names are free
 
@@ -159,59 +168,107 @@ run the matching step of quickstart.md against the workspace.
 
 ## Phase 3: User Story 1 - Mark every API event as valid or invalid (Priority: P1) 🎯 MVP
 
-**Goal**: the private validation table holds every bronze API event, unchanged, with `regras_violadas` and a never-null `fl_registro_invalido`, clustered by the flag.
+**Goal**: the boundary view delivers every bronze API event without `source_file_name` and `_rescued_data`. The private validation table holds every one of them, unchanged, with `regras_violadas` and a never-null `fl_registro_invalido`, partitioned by the flag.
 
-**Independent Test**: after one update, the event log shows that the validation flow wrote exactly `total` rows (T005), and the dry run accepted `PRIVATE`, the three-level name and `CLUSTER BY (fl_registro_invalido)`. The table is private, so its flag values are proven through the expectations (US2) and the quarantine table (US3).
+**Independent Test**: after the update of T015, the event log shows that the validation flow wrote exactly `total` rows (T006), and the update accepted the view and the private, partitioned, three-level definition. The table is private, so its flag values are proven through the expectations (US2) and the quarantine table (US3).
 
 ### Implementation for User Story 1
 
-- [X] T007 [US1] Create `src/pipeline/02_silver/temp_tb_validacao_api.sql` in the validation statement shape of the Conventions, with the four rules substituted verbatim. Use `COMMENT 'Eventos da API validados: cada evento do bronze, sem alteração, com as regras violadas e a flag fl_registro_invalido.'`. Add a header comment in Portuguese saying that this is the single validation of the API source at the bronze-to-silver boundary, that the expectations only measure, and that `fl_registro_invalido = true` goes to `tb_quarentena` while `false` goes on to the conformed tables. Lay out the four `CONSTRAINT` clauses and the four `CASE` lines so that the rules line up and can be compared line by line. Column rules from data-model.md: `regras_violadas` "empty array when none failed; never `NULL`"; `fl_registro_invalido` "never `NULL`"; `origem` "literal `'API'`… never `NULL`; not derived from the data"; `data_carga` "`current_timestamp()`… never `NULL`"
-- [X] T008 [US1] Review `src/pipeline/02_silver/temp_tb_validacao_api.sql` against the contract: it is `PRIVATE`, three-level named, has `CLUSTER BY (fl_registro_invalido)` and `TBLPROPERTIES ("quality" = "silver")`; the four `CONSTRAINT` conditions equal the four `CASE WHEN NOT (...)` conditions character for character and in the same order; the select list order is `*`, `regras_violadas`, `fl_registro_invalido`, `origem`, `data_carga`; nothing from the forbidden list appears (search the file for `ON VIOLATION`, `PARTITIONED`, `WHERE`, `LIVE`)
-- [X] T009 [US1] Upload the pipeline source with `databricks workspace import-dir src/pipeline /Workspace/Users/arthur.luz@dataslight.com.br/lakeflow_dev/src/pipeline --overwrite --profile <profile>`, and confirm with `databricks workspace list /Workspace/Users/arthur.luz@dataslight.com.br/lakeflow_dev/src/pipeline/02_silver --profile <profile>` that `temp_tb_validacao_api.sql` is there as a file, not a notebook
-- [ ] T010 [US1] Stop the SQL warehouse (Conventions), run a dry run with `databricks pipelines start-update <pipeline_id> --validate-only --profile <profile>`, and poll it to a terminal state. If `COMPLETED`, go on. If it failed on the lateral alias, apply the subquery fallback of the Conventions in `src/pipeline/02_silver/temp_tb_validacao_api.sql`, upload again (T009) and repeat. If it failed on the qualified private name or on `CLUSTER BY`, stop and report the exact error message to the owner. For any other error, fix the cause and repeat
-- [ ] T011 [US1] Stop the SQL warehouse, run a real update with `databricks pipelines start-update <pipeline_id> --profile <profile>`, poll it to `COMPLETED`, and record its `update_id` in the Implementation notes. Confirm with `databricks tables list workspace silver --profile <profile>` that `temp_tb_validacao_api` is **not** listed, because it is private
-- [ ] T012 [US1] With the first event log query of quickstart.md step 4 for the update of T011, confirm that the flow of `temp_tb_validacao_api` wrote exactly `total` rows (T005), so that no event was dropped (FR-002, SC-001), and that the bronze flows wrote 0 rows. Record the number
+- [X] T008 [US1] Create `src/pipeline/02_silver/01_vw_bronze_dados_api.sql` in the boundary view shape of the Conventions. Use `COMMENT 'Eventos da API vindos do bronze, sem source_file_name e _rescued_data.'`, and a header comment in Portuguese saying that the view is the bronze-to-silver boundary of the API source, that it removes the bronze-only lineage columns, and that it applies no filter, conversion or rule
+- [X] T009 [US1] Create `src/pipeline/02_silver/02_temp_tb_validacao_api.sql` in the validation statement shape of the Conventions, with the three rules substituted verbatim. It replaces the first version, `src/pipeline/02_silver/temp_tb_validacao_api.sql`. Use `COMMENT 'Eventos da API validados: cada evento da view de fronteira, sem alteração, com as regras violadas e a flag fl_registro_invalido.'`. Column rules from data-model.md:
+  - `regras_violadas`: "empty array when none failed; never `NULL`";
+  - `fl_registro_invalido`: "never `NULL`";
+  - `origem`: "literal `'API'`… not derived from the data";
+  - `data_carga`: "`current_timestamp()`… never `NULL`".
+- [X] T010 [US1] Review `src/pipeline/02_silver/01_vw_bronze_dados_api.sql` and `src/pipeline/02_silver/02_temp_tb_validacao_api.sql` against the contract:
+  - the view's select list is only `* EXCEPT (source_file_name, _rescued_data)` over `STREAM(workspace.bronze.dados_api)`;
+  - the validation table is `PRIVATE`, three-level named, reads `STREAM(vw_bronze_dados_api)`, and has `PARTITIONED BY (fl_registro_invalido)` and `TBLPROPERTIES ("quality" = "silver")`;
+  - the three `CONSTRAINT` conditions equal the three `CASE WHEN NOT (...)` conditions character for character, in the same order;
+  - no file contains `ON VIOLATION`, `CLUSTER BY`, `MATERIALIZED VIEW`, `LIVE`, or a `WHERE`.
 
-**Checkpoint**: every API event is classified; the split point exists
+**Checkpoint**: the split point is written; it is deployed together with US3 in Phase 5
 
 ---
 
-## Phase 4: User Story 2 - Count every rule violation in the pipeline's quality metrics (Priority: P1)
+## Phase 4: User Story 3 - Keep invalid events in a quarantine table (Priority: P1), definition
 
-**Goal**: the four rules appear by name in the pipeline's data quality metrics, with failed counts equal to what bronze predicts, and no row is dropped.
+**Goal**: the quarantine definition exists, so that a single update creates the view, the validation table and the quarantine table. This saves one update cycle against the Free Edition quota.
 
-**Independent Test**: quickstart.md step 4, expectations query. For `temp_tb_validacao_api`, the four names are listed, each `falhou` equals its count from T005, and `passou + falhou = total` for each rule.
+### Implementation for User Story 3 (definition)
+
+- [X] T011 [US3] Create `src/pipeline/02_silver/03_tb_quarentena.sql` in the quarantine statement shape of the Conventions. Use `COMMENT 'Quarentena dos eventos da API rejeitados pela validação, sem alteração, com as regras violadas.'`. Add a header comment in Portuguese saying that the table receives the rows of `temp_tb_validacao_api` with `fl_registro_invalido = true`, keeps the event as delivered by the boundary view so that it can be inspected and reprocessed, and records the rules in `regras_violadas`. Column rules from data-model.md:
+  - every column of the view keeps the "same name, type and value";
+  - `regras_violadas` holds "at least one name";
+  - `origem` is `'API'`;
+  - every validation column is kept, with nothing excluded or replaced (FR-012a): `regras_violadas`, `fl_registro_invalido`, `origem`, `data_carga` (validation time);
+  - `data_carga_quarentena` is "when the row entered quarantine; never `NULL`".
+  - Revised 2026-10-18: the first version dropped the flag and replaced `data_carga`. The owner then added the constitution rule that quarantine keeps every field.
+- [X] T012 [US3] Review `src/pipeline/02_silver/03_tb_quarentena.sql` against the contract:
+  - it is a published (not `PRIVATE`) streaming table, three-level named, with `TBLPROPERTIES ("quality" = "silver")` and the single warn expectation `regra_violada_registrada`;
+  - it reads only `STREAM(workspace.silver.temp_tb_validacao_api)` with `WHERE fl_registro_invalido`;
+  - its select list is `*` followed by `current_timestamp() AS data_carga_quarentena`, with no `EXCEPT`;
+  - it has no layout clause and nothing from the forbidden list.
+
+---
+
+## Phase 5: Deploy (shared by all stories)
+
+**Purpose**: one upload, one dry run and one real update for all silver files and the bronze renames
+
+- [X] T013 Upload with `databricks workspace import-dir src/pipeline /Workspace/Users/arthur.luz@dataslight.com.br/lakeflow_dev/src/pipeline --overwrite --profile databricks-free`. Then delete the unnumbered files left in the workspace with `databricks workspace delete` on each path: `.../01_bronze/dados_api.sql`, `.../01_bronze/dados_files.sql`, `.../01_bronze/dados_database.sql`, `.../02_silver/temp_tb_validacao_api.sql`. Confirm with `databricks workspace list` that `01_bronze` holds exactly `01_dados_api.sql`, `02_dados_files.sql`, `03_dados_database.sql`, and `02_silver` holds exactly `01_vw_bronze_dados_api.sql`, `02_temp_tb_validacao_api.sql`, `03_tb_quarentena.sql`, all as `FILE`
+- [ ] T014 Following the quota conventions, run a dry run with `databricks pipelines start-update 8d51ac7a-02be-4ce2-8afd-f4f263e448dd --validate-only --profile databricks-free` and poll it. It must be `COMPLETED`, with events defining `vw_bronze_dados_api`, `temp_tb_validacao_api` and `tb_quarentena`, and each bronze table defined once. On the lateral-alias error, apply the allowed fallback in `src/pipeline/02_silver/02_temp_tb_validacao_api.sql`, re-upload and repeat. Report any other error
+- [ ] T015 Following the quota conventions, run the real update with `databricks pipelines start-update 8d51ac7a-02be-4ce2-8afd-f4f263e448dd --profile databricks-free`, poll it to a terminal state and record its `update_id`. If it fails because the empty backing table of `temp_tb_validacao_api` has the old schema, **stop and ask the owner** to approve a refresh of that table only (`--json '{"full_refresh_selection": ["workspace.silver.temp_tb_validacao_api"]}'`). It holds no rows (research.md Decision 8). On `COMPLETED`, confirm that `SHOW TABLES IN workspace.silver` lists `tb_quarentena` and not `temp_tb_validacao_api`
+
+**Checkpoint**: all silver datasets are created and filled
+
+---
+
+## Phase 6: User Story 1 - validation
+
+- [ ] T016 [US1] With the first event log query of quickstart.md step 4 for the update of T015, confirm that the flow of `temp_tb_validacao_api` wrote exactly `total` rows (T006), so no event was dropped (FR-002, SC-001). Record the number
+
+---
+
+## Phase 7: User Story 2 - Count every rule violation in the pipeline's quality metrics (Priority: P1)
+
+**Goal**: the three rules appear by name in the pipeline's data quality metrics, with failed counts equal to what bronze predicts, and no row is dropped.
+
+**Independent Test**: quickstart.md step 4, expectations query. For `temp_tb_validacao_api`, the three names are listed, each `falhou` equals its count from T006, and `passou + falhou = total` for each rule.
 
 ### Implementation for User Story 2
 
-- [ ] T013 [US2] Run the expectations query of quickstart.md step 4 for the update of T011. Confirm that dataset `temp_tb_validacao_api` lists exactly `curso_invalido`, `valor_invalido`, `forma_pagamento_invalido` and `registro_nao_conforme`; that each rule's `falhou` equals its count from T005; and that `passou + falhou = total` for each rule. Record the four `falhou` values. A mismatch means a `CONSTRAINT` and its `CASE` line differ: fix `src/pipeline/02_silver/temp_tb_validacao_api.sql` only after reporting it to the owner, because already-validated rows are not re-evaluated without a full refresh
-- [ ] T014 [US2] Confirm that the rules only measure: the update of T011 is `COMPLETED`, not stopped by an expectation; `grep -n "ON VIOLATION" src/pipeline/02_silver/temp_tb_validacao_api.sql` returns nothing; and the row count of T012 equals `total`. Ask the owner to open the pipeline UI, select `temp_tb_validacao_api`, and confirm that the Data quality tab shows the four expectations with their metrics (completion gate 2). Record the answer
+- [ ] T017 [US2] Run the expectations query of quickstart.md step 4 for the update of T015. Confirm:
+  - dataset `temp_tb_validacao_api` lists exactly `curso_invalido`, `valor_invalido` and `forma_pagamento_invalido`;
+  - each rule's `falhou` equals its count from T006;
+  - `passou + falhou = total` for each rule.
 
-**Checkpoint**: every rule is measured and auditable
+  Record the three `falhou` values. A mismatch means a `CONSTRAINT` and its `CASE` line differ: report it to the owner before fixing.
+- [ ] T018 [US2] Confirm that the rules only measure: the update of T015 is `COMPLETED`; `grep -n "ON VIOLATION" src/pipeline/02_silver/*.sql` returns nothing; and T016's count equals `total`. Ask the owner to confirm, in the pipeline UI, that the Data quality tab of `temp_tb_validacao_api` shows the three expectations with their metrics (completion gate 2). Record the answer
 
 ---
 
-## Phase 5: User Story 3 - Keep invalid events in a quarantine table (Priority: P1)
+## Phase 8: User Story 3 - Keep invalid events in a quarantine table (Priority: P1), validation
 
-**Goal**: `workspace.silver.tb_quarentena` holds exactly the flagged events, unchanged, each with the rules it broke, `origem = 'API'` and its own `data_carga`.
+**Goal**: `workspace.silver.tb_quarentena` holds exactly the flagged events, as delivered by the boundary view, with every column of the validation table (rules, flag, `origem = 'API'`, validation `data_carga`) plus `data_carga_quarentena`.
 
-**Independent Test**: quickstart.md step 3. The quarantine count equals `invalidos` (T005); the per-rule counts equal T005's; both `EXCEPT ALL` sides return 0; no row lacks `origem`, `data_carga` or a rule name.
+**Independent Test**: quickstart.md step 3. The quarantine count equals `invalidos` (T006), the per-rule counts equal T006's, both `EXCEPT ALL` sides return 0, the column list is every validation column plus `data_carga_quarentena` with no bronze-only column, and no row lacks `origem`, `data_carga`, `data_carga_quarentena` or a rule name.
 
-### Implementation for User Story 3
+### Implementation for User Story 3 (validation)
 
-- [ ] T015 [US3] Create `src/pipeline/02_silver/tb_quarentena.sql` in the quarantine statement shape of the Conventions. Use `COMMENT 'Quarentena dos eventos da API rejeitados pela validação, sem alteração, com as regras violadas.'`. Add a header comment in Portuguese saying that the table receives the rows of `temp_tb_validacao_api` with `fl_registro_invalido = true`, keeps the original event unchanged so that it can be inspected and reprocessed, and records the rules in `regras_violadas`. Column rules from data-model.md: every bronze column has the "same name, type and value"; `regras_violadas` has "at least one name"; `origem` is `'API'`; `data_carga` is "when the row entered quarantine; replaces the validation table's value"; `fl_registro_invalido` "is not carried"
-- [ ] T016 [US3] Review `src/pipeline/02_silver/tb_quarentena.sql` against the contract: it is a published (not `PRIVATE`) streaming table, three-level named, with `TBLPROPERTIES ("quality" = "silver")` and the single warn expectation `regra_violada_registrada`; it reads only `STREAM(workspace.silver.temp_tb_validacao_api)` with `WHERE fl_registro_invalido`; the select list is `* EXCEPT (fl_registro_invalido, data_carga)` followed by `current_timestamp() AS data_carga`; nothing from the forbidden list appears
-- [ ] T017 [US3] Upload the source as in T009 and confirm `tb_quarentena.sql` is in `.../lakeflow_dev/src/pipeline/02_silver` as a file. Stop the SQL warehouse, run a dry run with `--validate-only`, and poll it to `COMPLETED`. On failure, fix `src/pipeline/02_silver/tb_quarentena.sql` and repeat
-- [ ] T018 [US3] Stop the SQL warehouse, run a real update, poll it to `COMPLETED`, and record its `update_id`. Confirm that `databricks tables list workspace silver --profile <profile>` lists `tb_quarentena` and still does not list `temp_tb_validacao_api`. With the first event log query of quickstart.md step 4 for this update, confirm that the `tb_quarentena` flow wrote exactly `invalidos` rows (T005), and that the `temp_tb_validacao_api` flow wrote 0 rows, since bronze did not grow
-- [ ] T019 [US3] Run the two count queries of quickstart.md step 3 on `workspace.silver.tb_quarentena`. Confirm that the total equals `invalidos` (T005), and that the count of each rule from `explode(regras_violadas)` equals the same rule's count from T005 and its `falhou` from T013. Record the counts. A rule whose three numbers disagree means its `CONSTRAINT` and `CASE` line have drifted (research.md Decision 5)
-- [ ] T020 [US3] Run the remaining queries of quickstart.md step 3. The checks query must return `origem_errada = 0`, `sem_data_carga = 0` and `sem_regra = 0`. Both `EXCEPT ALL` sides must return 0, proving that quarantine equals the invalid bronze rows field for field (FR-010, SC-005). Also run `SHOW TBLPROPERTIES workspace.silver.tb_quarentena ('quality')` and confirm the value is `silver`. Then run `databricks tables get workspace.silver.tb_quarentena --profile <profile>` and confirm that it is a streaming table carrying its Portuguese comment
-- [ ] T021 [US3] Run the expectations query of quickstart.md step 4 for the update of T018. Confirm that dataset `tb_quarentena` lists `regra_violada_registrada` with `falhou = 0` and `passou = invalidos`
+- [ ] T019 [P] [US3] Run the two count queries of quickstart.md step 3 on `workspace.silver.tb_quarentena`. Confirm that the total equals `invalidos` (T006), and that each rule's count from `explode(regras_violadas)` equals its count from T006 and its `falhou` from T017. Record the counts
+- [ ] T020 [P] [US3] Run the remaining queries of quickstart.md step 3:
+  - the checks return `origem_errada = 0`, `sem_data_carga = 0`, `sem_data_carga_quarentena = 0`, `flag_falsa = 0` and `sem_regra = 0`;
+  - the `information_schema.columns` query lists exactly the ten columns of quickstart.md step 3, with no `source_file_name` or `_rescued_data`;
+  - both `EXCEPT ALL` sides return 0 (FR-010, SC-005).
+
+  Also confirm `SHOW TBLPROPERTIES workspace.silver.tb_quarentena ('quality')` is `silver`.
+- [ ] T021 [P] [US3] Run the expectations query of quickstart.md step 4 for the update of T015. Confirm that dataset `tb_quarentena` lists `regra_violada_registrada` with `falhou = 0` and `passou = invalidos`
 
 **Checkpoint**: invalid events are preserved with their reasons; nothing is silently discarded
 
 ---
 
-## Phase 6: User Story 4 - Let valid events continue downstream (Priority: P2)
+## Phase 9: User Story 4 - Let valid events continue downstream (Priority: P2)
 
 **Goal**: valid and quarantined events partition bronze exactly, and later runs process only new events.
 
@@ -219,48 +276,50 @@ run the matching step of quickstart.md against the workspace.
 
 ### Implementation for User Story 4
 
-- [ ] T022 [US4] Reconcile (FR-013, SC-004). Compute valid = validation rows (T012) − quarantine rows (T019). Confirm that valid = `total` − `invalidos`, and that bronze `total` = valid + quarantined with a difference of 0. Because T020 proved that quarantine is exactly the invalid bronze set, every event is on exactly one side. Record the three numbers in the Implementation notes
-- [ ] T023 [US4] Prove incremental behavior (FR-015, SC-007). Record the count of `workspace.silver.tb_quarentena`, stop the SQL warehouse, and run another update with no new landing data. Poll it to `COMPLETED`. With the first event log query of quickstart.md step 4 for this update, confirm that the `temp_tb_validacao_api` and `tb_quarentena` flows each wrote 0 rows. Confirm that the quarantine count did not change
+- [ ] T022 [US4] Reconcile (FR-013, SC-004). Compute valid = validation rows (T016) − quarantine rows (T019). Confirm that valid = `total` − `invalidos`, and that bronze `total` = valid + quarantined with a difference of 0. Record the three numbers
+- [ ] T023 [US4] Prove incremental behavior (FR-015, SC-007). Following the quota conventions, run another update with no new landing data and poll it to `COMPLETED`. With the first event log query of quickstart.md step 4 for this update, confirm that the `temp_tb_validacao_api` and `tb_quarentena` flows each wrote 0 rows, and that the quarantine count is unchanged
 
 **Checkpoint**: the split is exact and incremental; the valid side is ready for the conformed tables of later features
 
 ---
 
-## Phase 7: Polish & Cross-Cutting Concerns
+## Phase 10: Polish & Cross-Cutting Concerns
 
-**Purpose**: the documentation required by FR-018 (and by US4 scenario 3 for the consumer rule), and the final review
+**Purpose**: the documentation required by FR-018 (and US4 scenario 3 for the consumer rule), and the final review
 
-- [ ] T024 [P] In `doc/pipeline-reference.md`:
-  - Remove the `vw_bronze_dados_api` row from the `### Temporary views` table: the new design reads bronze directly.
-  - Rewrite `### temp_tb_validacao_api` for the new design. Cover:
-    - the file `src/pipeline/02_silver/temp_tb_validacao_api.sql`;
-    - that it is a private streaming table, clustered (not partitioned) by `fl_registro_invalido`, reading `workspace.bronze.dados_api` directly;
-    - the table of the four rules, with conditions and "empty field passes";
+- [X] T024 [P] In `doc/pipeline-reference.md`:
+  - Rename the bronze file links to `01_dados_api.sql`, `02_dados_files.sql` and `03_dados_database.sql`.
+  - In `### Temporary views`, replace the `vw_bronze_dados_api` row with the new view: file `src/pipeline/02_silver/01_vw_bronze_dados_api.sql`; `bronze.dados_api` minus `source_file_name` and `_rescued_data`; a streaming temporary view.
+  - Rewrite `### temp_tb_validacao_api`. Cover:
+    - the file `src/pipeline/02_silver/02_temp_tb_validacao_api.sql`;
+    - that it is a private streaming table, partitioned by `fl_registro_invalido` (a recorded exception to Principle V, because liquid clustering rejects `BOOLEAN` columns), reading `vw_bronze_dados_api`;
+    - the table of the three rules, with conditions and "empty field passes";
     - the columns `regras_violadas`, `fl_registro_invalido`, `origem`, `data_carga`;
     - that the expectations only measure;
-    - the consumer rule: conformed silver tables built from API events must read `STREAM(workspace.silver.temp_tb_validacao_api)` with `WHERE NOT fl_registro_invalido`, and must not restate the rules.
+    - the consumer rule: conformed tables read `STREAM(workspace.silver.temp_tb_validacao_api)` with `WHERE NOT fl_registro_invalido`, and do not restate the rules.
   - Rewrite `### tb_quarentena`. Cover:
-    - the file `src/pipeline/02_silver/tb_quarentena.sql`;
-    - that it is a streaming table of the flagged rows, every bronze column unchanged;
-    - `regras_violadas`, `origem = 'API'`, and its own `data_carga`;
+    - the file `src/pipeline/02_silver/03_tb_quarentena.sql`;
+    - the flagged rows, as delivered by the view;
+    - every column of the validation table (constitution Principle IV), plus `data_carga_quarentena`;
     - the expectation `regra_violada_registrada`;
-    - that it has no hash key, because it is not a conformed table.
-  - Add a reconciliation line: bronze `dados_api` = valid + quarantined, with no documented exclusion.
-  - Change the intro paragraph so it says that these two Silver sections describe the pipeline as built under `src/pipeline/02_silver/`, while the other Silver sections and Gold still describe the earlier pipeline.
-- [ ] T025 [P] In `doc/architecture.md`:
-  - In the mermaid graph, delete the node line `V1([vw_bronze_dados_api])`, and change the edge `L1 --> B1 --> V1 --> T1` to `L1 --> B1 --> T1`. Leave the other edges unchanged.
-  - In the "Lakeflow features demonstrated" table, point these rows to the new files instead of `code_tips/02_silver/03_temp_tb_validacao_api.sql` and `04_tb_quarentena.sql`:
-    - "Temporary (pipeline-private) streaming table" → `../src/pipeline/02_silver/temp_tb_validacao_api.sql`;
-    - "Expectations that only record violations" → the same file;
-    - "Quarantine pattern (flag column + split)" → both new files.
-  - Add a row "Liquid clustering (`CLUSTER BY`)" pointing to `temp_tb_validacao_api.sql`.
-  - In the "Temporary streaming views" row, remove the link to `01_vw_bronze_dados_api.sql` and keep the other `vw_` files.
-- [ ] T026 [P] In `doc/known-issues.md`, delete the table row for `04_tb_quarentena.sql:4` under `## Catalog name mismatch`, and delete the paragraph that begins "The quarantine table is the one that matters for the pipeline". The new quarantine reads `workspace.silver.temp_tb_validacao_api`. Keep the other rows of that section
-- [ ] T027 Final review against contracts/silver-validation-quarantine.md:
-  - The two files in `src/pipeline/02_silver/` match their statement shapes, apart from a fallback recorded in the Implementation notes, and contain nothing from the forbidden list.
-  - The workspace copies are identical to the repository. Upload again if a file changed after its last upload; that also requires a further update, so report it.
-  - `git status` shows changes only in `src/pipeline/02_silver/`, `doc/pipeline-reference.md`, `doc/architecture.md`, `doc/known-issues.md` and `specs/004-api-quarantine/`.
-  - `explorations/setup/03_pipeline_dev.json` and `src/pipeline/01_bronze/` are unchanged.
+    - that it has no hash key, because it is not conformed.
+  - Add a reconciliation line: bronze `dados_api` = valid + quarantined.
+  - Change the intro so it says that the bronze section and these silver sections describe the pipeline as built, while the other silver sections and gold still describe the earlier pipeline.
+- [X] T025 [P] In `doc/architecture.md`:
+  - Keep the graph edge `L1 --> B1 --> V1 --> T1`.
+  - In the "Lakeflow features demonstrated" table, point these rows to the new files:
+    - "Temporary streaming views" → `../src/pipeline/02_silver/01_vw_bronze_dados_api.sql`, keeping the other `vw_` links;
+    - "Temporary (pipeline-private) streaming table" and "Expectations that only record violations" → `02_temp_tb_validacao_api.sql`;
+    - "Quarantine pattern (flag column + split)" → `02_temp_tb_validacao_api.sql` and `03_tb_quarentena.sql`.
+  - Add a row "Partitioning by a Boolean flag (`PARTITIONED BY`; `CLUSTER BY` rejects `BOOLEAN`)" → `02_temp_tb_validacao_api.sql`.
+  - Rename any bronze file links to the numbered names.
+- [X] T026 [P] In `doc/README.md`, update the repository layout so that `src/pipeline/01_bronze/` lists `01_dados_api.sql`, `02_dados_files.sql` and `03_dados_database.sql`, and `src/pipeline/02_silver/` lists its three files with a one-line description each. Update the "Pipeline datasets" row of the "At a glance" table to what exists now: 3 bronze tables, 1 silver view, 1 private silver table and 1 silver table
+- [X] T027 [P] In `doc/known-issues.md`, delete the table row for `04_tb_quarentena.sql:4` under `## Catalog name mismatch`, and the paragraph beginning "The quarantine table is the one that matters for the pipeline". Keep the other rows
+- [ ] T028 Final review against contracts/silver-validation-quarantine.md:
+  - the files in `src/pipeline/01_bronze/` and `src/pipeline/02_silver/` match their shapes and the numbering;
+  - the workspace copies are identical to the repository, and no unnumbered file remains in the workspace;
+  - `git status` shows changes only in `src/pipeline/`, `doc/`, `specs/004-api-quarantine/` and `.specify/memory/constitution.md`;
+  - `explorations/setup/03_pipeline_dev.json` is unchanged.
 
   Then complete the Implementation notes.
 
@@ -270,60 +329,44 @@ run the matching step of quickstart.md against the workspace.
 
 ### Phase Dependencies
 
-- **Setup (Phase 1)**: requires features 001–003 in place, with `workspace.bronze.dados_api` populated
-- **Foundational (Phase 2)**: depends on Setup; blocks all user stories
-- **User Story 1 (Phase 3)**: depends on Foundational
-- **User Story 2 (Phase 4)**: depends on US1's update (T011); adds no code, only proof
-- **User Story 3 (Phase 5)**: depends on US1, since quarantine reads the validation table. It can run before or after US2, but T019 compares with T013, so run US2 first if possible
-- **User Story 4 (Phase 6)**: depends on US1 and US3
-- **Polish (Phase 7)**: depends on all four stories
+- **Setup (Phase 1)** and **Foundational (Phase 2)**: block everything
+- **US1 definition (Phase 3)** and **US3 definition (Phase 4)**: after Foundational; T011 needs no US1 result, only the contract
+- **Deploy (Phase 5)**: after Phases 3 and 4
+- **US1 validation (Phase 6)**, **US2 (Phase 7)**, **US3 validation (Phase 8)**: after Deploy. T019 compares with T017, so run Phase 7 first if possible
+- **US4 (Phase 9)**: after Phases 6 and 8
+- **Polish (Phase 10)**: after all stories
 
-### User Story Dependencies
+### Why one deploy for all stories
 
-- **US1 (P1)**: independent; creates the validation table
-- **US2 (P1)**: needs US1's update; read-only
-- **US3 (P1)**: needs US1's table; creates the quarantine table
-- **US4 (P2)**: needs US1 and US3; read-only plus one no-change update
-
-### Within Each User Story
-
-- US1: write, review, upload, dry run, run, check; strictly in order
-- US2: T013 before T014
-- US3: write, review, upload and dry run, run, then T019–T021 in any order
-- US4: T022 before T023, so that the reconciled counts are taken before the extra update
+Each update on Free Edition costs a wait of about 4 minutes for the serverless quota. The
+first task list deployed US1 and US3 separately. Its notes allowed deploying them together,
+and the owner's deployment attempts showed how costly each cycle is. One update now
+creates the view and both tables. Each story is still validated on its own.
 
 ### Parallel Opportunities
 
-- T003, T004 and T006 are independent reads
-- T019, T020 and T021 are read-only queries and can run together
-- T024, T025 and T026 edit three different documentation files
-- The two SQL files are separate, but T015 is deliberately after US1's run so that the validation table is proven first. They could be written together if the owner prefers a single upload and update; the statement shapes do not change
+- T004, T005 and T007 are independent reads
+- T011 can be written while T010 is reviewed
+- T019, T020 and T021 are read-only queries
+- T024–T027 edit four different documentation files
 
 ---
-
-## Parallel Example: Foundational
-
-```bash
-# Independent reads before any code:
-Task: "Read the databricks-pipelines skill references (T003)"
-Task: "DESCRIBE workspace.bronze.dados_api and record the rule field types (T004)"
-Task: "Confirm tb_quarentena and temp_tb_validacao_api do not exist in workspace.silver (T006)"
-```
 
 ## Parallel Example: User Story 3 validation
 
 ```bash
-Task: "Quarantine counts per rule vs T005 and T013 (T019)"
-Task: "origem / data_carga / regras_violadas checks, EXCEPT ALL both ways, properties (T020)"
+Task: "Quarantine counts per rule vs T006 and T017 (T019)"
+Task: "origem / data_carga / regras_violadas checks, absent columns, EXCEPT ALL, properties (T020)"
 Task: "regra_violada_registrada expectation metrics (T021)"
 ```
 
 ## Parallel Example: Polish
 
 ```bash
-Task: "Rewrite the two silver sections of doc/pipeline-reference.md (T024)"
-Task: "Update the graph and feature table of doc/architecture.md (T025)"
-Task: "Remove the resolved quarantine entry from doc/known-issues.md (T026)"
+Task: "Rewrite bronze links and the silver sections of doc/pipeline-reference.md (T024)"
+Task: "Update the feature table of doc/architecture.md (T025)"
+Task: "Update the layout in doc/README.md (T026)"
+Task: "Remove the resolved quarantine entry from doc/known-issues.md (T027)"
 ```
 
 ---
@@ -332,35 +375,44 @@ Task: "Remove the resolved quarantine entry from doc/known-issues.md (T026)"
 
 ### MVP First (User Story 1 Only)
 
-1. Complete Phase 1: Setup
-2. Complete Phase 2: Foundational. The rules are proven to catch real rows before any code exists
-3. Complete Phase 3: User Story 1
-4. **STOP and VALIDATE**: the validation flow wrote `total` rows, and the dry run accepted the private, clustered, three-level definition
-5. The split point exists; quarantine and the conformed tables can now be built on it
+1. Setup + Foundational
+2. US1 definition, then deploy only the view and the validation table (move `03_tb_quarentena.sql` aside before T013)
+3. **STOP and VALIDATE** with T016
+
+The chosen path deploys everything at once (Phase 5), because each extra update costs a
+quota cycle.
 
 ### Incremental Delivery
 
-1. Setup + Foundational → facts recorded, names free
-2. User Story 1 → every event classified (MVP)
-3. User Story 2 → every rule measured, with counts equal to bronze's prediction
-4. User Story 3 → invalid events preserved with their reasons
-5. User Story 4 → exact reconciliation and incremental behavior proven
-6. Polish → documentation describes the validation and quarantine as built
+1. Setup + Foundational → facts recorded
+2. US1 + US3 definitions → three files written and reviewed
+3. Deploy → one update creates all silver datasets
+4. US1, US2, US3 validations → split, metrics and quarantine proven
+5. US4 → reconciliation and incremental behavior proven
+6. Polish → documentation describes the pipeline as built
 
 ---
 
 ## Notes
 
 - What touches the workspace:
-  - T002 and T004–T006 only read.
-  - T009 and T017 upload files.
-  - T010, T011, T017, T018 and T023 run pipeline updates. None is a full refresh.
-  - Nothing writes to the landing volume.
-- The first real update (T011) validates about 2.55 million events, the bronze count from
-  feature 003. Allow a few minutes and keep polling.
-- If a rule must change after T011, the already-validated rows keep their old
-  classification. Re-evaluating them requires a full refresh of both tables, which needs
-  the owner's approval and is not part of these tasks.
+  - T006 and T016–T022 only read.
+  - T013 uploads files and deletes the four obsolete workspace copies.
+  - T014, T015 and T023 run pipeline updates. A refresh happens only with the owner's approval (T015).
+- Earlier IDs, for reading the notes below:
+
+  | Earlier ID | Now |
+  |---|---|
+  | T001, T002 | T001, T002 |
+  | T003–T006 | T004, T005, T006, T007 |
+  | T007, T008 | T008–T010 |
+  | T009–T011 | T013–T015 |
+  | T012–T014 | T016–T018 |
+  | T015, T016 | T011, T012 |
+  | T017–T021 | T013–T015, T019–T021 |
+  | T022, T023 | T022, T023 |
+  | T024–T027 | T024–T028 |
+
 - Commit after each phase checkpoint.
 
 ## Implementation notes
@@ -384,6 +436,26 @@ latest update before this feature, `68a80a60-...`, completed at 14:30 UTC, after
 failed ones at 14:26.
 
 **T009**: `src/pipeline` uploaded; `02_silver/temp_tb_validacao_api.sql` is a `FILE`.
+
+**T010**: the dry run started by the CLI (`25ff37aa-...`, 14:32 UTC) failed on the Free
+Edition quota (`RESOURCE_EXHAUSTED: You've hit the limit for serverless compute for free
+usage`), with the SQL warehouse already stopped and no other pipeline, app or job
+running. The owner then ran a validation from the UI (`a142e0e5-...`, 14:34 UTC), which
+**completed**. It defined `workspace.silver.temp_tb_validacao_api` as a streaming table
+and its append flow, so the qualified private name and the lateral alias were accepted.
+No fallback was needed. A validate-only run does not create tables, so it could not catch
+the layout error below. A later UI start
+(`69431660-...`, 14:35) failed on the same quota.
+
+**Quota pattern**: every failed update today (8 of them) failed within about 2 seconds
+with the same quota error. Each time, the next success came several minutes after the
+previous update finished. Free Edition seems to keep serverless capacity reserved for a
+few minutes after an update. Waiting about 4 minutes before starting works; retrying
+sooner does not.
+
+**Bronze was fully refreshed by the owner today** (updates `db0a7100-...` 13:46 and
+`d6819922-...` 13:56 UTC reset all three bronze tables). The T005 counts are re-checked
+before they are compared with the silver results.
 
 **T003**: skill read (`SKILL.md`, `references/streaming-table-sql.md`,
 `references/expectations-sql.md`). No disagreement with the contract. The skill lists
@@ -416,3 +488,55 @@ was run as a batch query over bronze on the SQL warehouse. The lateral alias
 | (empty) | false | 2,541,715 |
 | curso_invalido, valor_invalido, forma_pagamento_invalido | true | 6,934 |
 | curso_invalido, valor_invalido | true | 2,306 |
+
+**Layout change (T011)**: the first real updates, the owner's `44f61719-...` (14:39 UTC)
+and the CLI's `b22b266c-...` (14:41 UTC), failed in `SETTING_UP_TABLES` with
+`[DELTA_CLUSTERING_COLUMNS_DATATYPE_NOT_SUPPORTED] CLUSTER BY is not supported because the
+following column(s): fl_registro_invalido : BOOLEAN don't support data skipping.`
+`44f61719` had already created the private table's backing table,
+`workspace.silver.__8d51ac7a_02be_4ce2_8afd_f4f263e448dd_temp_tb_validacao_api`, with no
+rows. The owner decided to partition instead, as the original request said. The file now
+has `PARTITIONED BY (fl_registro_invalido)`. The spec (FR-008, User Story 1 scenario 8,
+Assumptions), plan (Principle V deviation and Complexity Tracking), research Decision 2,
+data model, contract, quickstart and this file were updated to match. The workspace copy
+was re-uploaded and is identical to the repository.
+
+### 2026-10-18, rework for constitution v1.6.0
+
+**Update `7c69f3e9-...` (14:46 UTC)** was started by the CLI with the partitioned v1.5.0
+definition and was stopped by the CLI at 14:46:27. The owner was about to amend the
+constitution, and the run would have written 2.55 million rows with `source_file_name` and
+`_rescued_data`. It ended `CANCELED`. The silver flow was `SKIPPED`, so no row was written.
+It passed `SETTING_UP_TABLES`, which shows that `PARTITIONED BY (fl_registro_invalido)` is
+accepted. `dados_api` shows `FAILED` only because it was stopped while starting; its
+checkpoint is unaffected.
+
+**Amendments** (owner, 2026-10-18, constitution v1.6.0): numbered files per zone; a
+boundary view excluding `source_file_name` and `_rescued_data` before each zone change;
+the rescued-data rule removed (owner's choice among three options); bronze and silver
+declared as streaming only, with gold keeping materialized views.
+
+**Rework done**:
+- T003: bronze files renamed with `git mv`.
+- T008: `01_vw_bronze_dados_api.sql` created.
+- T009: `02_temp_tb_validacao_api.sql` created. It reads the view, has three rules and is
+  partitioned. It replaces `temp_tb_validacao_api.sql`, which was removed locally.
+- Spec, plan, research, data model, contract, quickstart and this task list were revised.
+
+**T006** (recount, 14:57 UTC): unchanged after the owner's bronze refresh: `total`
+2,550,955; `curso_invalido` 9,240; `valor_invalido` 9,240; `forma_pagamento_invalido`
+6,934; `invalidos` 9,240. Latest bronze `processing_time` 13:57:09 UTC.
+
+**T013**: uploaded. The four obsolete workspace files were deleted:
+`01_bronze/dados_api.sql`, `01_bronze/dados_files.sql`, `01_bronze/dados_database.sql`
+and `02_silver/temp_tb_validacao_api.sql`. The workspace now lists exactly the six
+numbered files, all `FILE`.
+
+**Quarantine keeps every field** (owner, 2026-10-18, 14:59 UTC): before the first
+deployment of `tb_quarentena`, the owner asked that it carry all fields, to make data
+issues easy to identify. They chose "all silver fields" and put the rule in the
+constitution (Principle IV, v1.6.0). `03_tb_quarentena.sql` now selects `*` from the
+validation table, keeping `regras_violadas`, `fl_registro_invalido`, `origem` and the
+validation `data_carga`, and adds `data_carga_quarentena`. The background deploy started
+at 14:57 was stopped at 14:59, before its dry run began. No update ran. The revised
+file was uploaded and is identical to the repository.

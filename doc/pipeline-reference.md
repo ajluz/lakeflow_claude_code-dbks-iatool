@@ -3,10 +3,11 @@
 Every dataset of the pipeline, in dependency order. Tables carry a `quality`
 table property (`bronze`, `silver` or `gold`).
 
-The Bronze section describes the pipeline as it is built today, under
-[src/pipeline/](../src/pipeline/). The Silver and Gold sections still describe
-the earlier pipeline, whose `code_tips/` folder is no longer in the repository;
-they will be replaced as those layers are rebuilt.
+The Bronze section, and in Silver the view `vw_bronze_dados_api` and the sections
+`temp_tb_validacao_api` and `tb_quarentena`, describe the pipeline as it is built
+today, under [src/pipeline/](../src/pipeline/). The other Silver datasets and the Gold
+section still describe the earlier pipeline, whose `code_tips/` folder is no longer
+in the repository; they will be replaced as those layers are rebuilt.
 
 ## Bronze
 
@@ -17,9 +18,9 @@ nothing is filtered, cast, renamed or deduplicated.
 
 | Table | File | Reads | Format |
 |---|---|---|---|
-| `workspace.bronze.dados_api` | [dados_api.sql](../src/pipeline/01_bronze/dados_api.sql) | `/Volumes/workspace/bronze/landing/stream/` | JSON |
-| `workspace.bronze.dados_files` | [dados_files.sql](../src/pipeline/01_bronze/dados_files.sql) | `/Volumes/workspace/bronze/landing/files/` | CSV, header, `,` |
-| `workspace.bronze.dados_database` | [dados_database.sql](../src/pipeline/01_bronze/dados_database.sql) | `/Volumes/workspace/bronze/landing/database/` | CSV, header, `,` |
+| `workspace.bronze.dados_api` | [01_dados_api.sql](../src/pipeline/01_bronze/01_dados_api.sql) | `/Volumes/workspace/bronze/landing/stream/` | JSON |
+| `workspace.bronze.dados_files` | [02_dados_files.sql](../src/pipeline/01_bronze/02_dados_files.sql) | `/Volumes/workspace/bronze/landing/files/` | CSV, header, `,` |
+| `workspace.bronze.dados_database` | [03_dados_database.sql](../src/pipeline/01_bronze/03_dados_database.sql) | `/Volumes/workspace/bronze/landing/database/` | CSV, header, `,` |
 
 Every table has the same shape:
 
@@ -51,7 +52,7 @@ Exist only during a pipeline update and are not published to the catalog.
 
 | View | File | Definition |
 |---|---|---|
-| `vw_bronze_dados_api` | [01](../code_tips/02_silver/01_vw_bronze_dados_api.sql) | `bronze.dados_api` minus `source_file_name`, `_rescued_data` |
+| `vw_bronze_dados_api` | [01](../src/pipeline/02_silver/01_vw_bronze_dados_api.sql) | `STREAM(bronze.dados_api)` minus `source_file_name`, `_rescued_data`; the bronze-to-silver boundary of the API source. As built |
 | `vw_bronze_dados_files` | [02](../code_tips/02_silver/02_vw_bronze_dados_files.sql) | `bronze.dados_files` minus `source_file_name`, `_rescued_data` |
 | `vw_silver_tb_venda_api` | [07](../code_tips/02_silver/07_vw_silver_tb_venda_api.sql) | Sales shaped from valid API events that have a payment payload |
 | `vw_silver_tb_venda_files` | [08](../code_tips/02_silver/08_vw_silver_tb_venda_files.sql) | Sales shaped from partner files |
@@ -59,34 +60,61 @@ Exist only during a pipeline update and are not published to the catalog.
 
 ### temp_tb_validacao_api
 
-[03_temp_tb_validacao_api.sql](../code_tips/02_silver/03_temp_tb_validacao_api.sql)
-— temporary streaming table, partitioned by `fl_registro_invalido`.
+[02_temp_tb_validacao_api.sql](../src/pipeline/02_silver/02_temp_tb_validacao_api.sql)
+— private streaming table `workspace.silver.temp_tb_validacao_api`, partitioned by
+`fl_registro_invalido`. As built.
 
-Reads `vw_bronze_dados_api` and adds `fl_registro_invalido`, which is `TRUE` when
-any of these holds:
-
-- `payload.info_produto.product_name = 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'`
-- `payload.info_pagamento.forma_pagamento = '-----'`
-- `payload.info_pagamento.valor = '0.00'`
-
-The same three rules are declared as expectations with no `ON VIOLATION` clause,
-so violating rows are kept and only counted in the pipeline's data quality
-metrics:
+Reads `STREAM(vw_bronze_dados_api)`, so it never sees `source_file_name` or
+`_rescued_data`. It keeps every column of the view unchanged and validates each API
+event once, against three rules. A rule passes when its field is empty, so a visit
+without a purchase is valid:
 
 | Expectation | Passes when |
 |---|---|
-| `curso_invalido` | product name is null or not the placeholder |
-| `valor_invalido` | payment value is null or not `'0.00'` |
-| `forma_pagamento_invalido` | payment method is null or not `'-----'` |
+| `curso_invalido` | `payload.info_produto.product_name` is null or not `'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'` (32 `x`) |
+| `valor_invalido` | `payload.info_pagamento.valor` is null or not `0.00` (the column is `DOUBLE`, so every zero amount fails) |
+| `forma_pagamento_invalido` | `payload.info_pagamento.forma_pagamento` is null or not `'-----'` |
 
-Downstream tables split on the flag: `TRUE` goes to quarantine, `FALSE` to the
-conformed tables.
+The expectations have no `ON VIOLATION` clause: they only count failures in the
+pipeline's data quality metrics and drop nothing. The same three conditions build
+the added columns:
+
+| Column | Derivation |
+|---|---|
+| `regras_violadas` | array with the name of each failed rule; empty when none failed |
+| `fl_registro_invalido` | `size(regras_violadas) > 0`; never null |
+| `origem` | `'API'` |
+| `data_carga` | `current_timestamp()` when the row was validated |
+
+The table is partitioned, not clustered, by the flag. Liquid clustering rejects
+`BOOLEAN` columns (`DELTA_CLUSTERING_COLUMNS_DATATYPE_NOT_SUPPORTED`), and a true/false
+column gives only two partitions. This is a recorded exception to the constitution's
+"no `PARTITIONED BY`" rule (feature 004 plan, Complexity Tracking).
+
+The table is private: it is not in the catalog, and its counts are read from the
+pipeline event log.
+
+**Consumer rule**: a conformed silver table built from API events reads
+`STREAM(workspace.silver.temp_tb_validacao_api)` with `WHERE NOT fl_registro_invalido`,
+and does not restate the rules. Flagged rows go to `tb_quarentena`.
 
 ### tb_quarentena
 
-[04_tb_quarentena.sql](../code_tips/02_silver/04_tb_quarentena.sql) — streaming
-table. All rows of the validation table where `fl_registro_invalido = TRUE`, kept
-unchanged for later analysis.
+[03_tb_quarentena.sql](../src/pipeline/02_silver/03_tb_quarentena.sql) — streaming
+table `workspace.silver.tb_quarentena`. As built.
+
+Every row of the validation table where `fl_registro_invalido` is true, with every
+column of that table and nothing excluded, so that all the evidence of a data issue is in
+one row:
+- the event as delivered by `vw_bronze_dados_api`, unchanged;
+- `regras_violadas`, `fl_registro_invalido` and `origem = 'API'`;
+- `data_carga`, the time of validation;
+- `data_carga_quarentena`, the time the row entered quarantine. The warn expectation
+`regra_violada_registrada` (`size(regras_violadas) > 0`) checks that every row names at
+least one rule. There is no hash key, because quarantine is not a conformed table.
+
+**Reconciliation**: rows in `bronze.dados_api` = valid rows of the validation table +
+rows in `tb_quarentena`. No exclusion is documented.
 
 ### tb_acesso
 

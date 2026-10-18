@@ -17,8 +17,10 @@ validation step that marks it as valid or invalid, so that the rest of the pipel
 decide where each event goes without repeating the rules.
 
 The validation step is the pipeline-private table `workspace.silver.temp_tb_validacao_api`.
-It holds every event from `workspace.bronze.dados_api` together with a flag,
-`fl_registro_invalido`, that is true when the event breaks at least one rule.
+It holds every event from `workspace.bronze.dados_api`, read through the boundary view
+`vw_bronze_dados_api` (which leaves out the bronze-only columns `source_file_name` and
+`_rescued_data`), together with a flag, `fl_registro_invalido`, that is true when the event
+breaks at least one rule.
 
 An event is invalid when any of these holds:
 
@@ -27,10 +29,8 @@ An event is invalid when any of these holds:
 | `curso_invalido` | the product name is the placeholder `'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'` (32 `x`) | passes |
 | `valor_invalido` | the payment value is `'0.00'` | passes |
 | `forma_pagamento_invalido` | the payment method is the placeholder `'-----'` | passes |
-| `registro_nao_conforme` | the record carried content that did not fit the bronze schema (the rescued-data column is filled) | passes (nothing was rescued) |
-
-The first three rules come from the request. The fourth is required by the project
-constitution (Principle IV) for every source.
+The three rules come from the request. Under constitution v1.6.0, rescued data is not
+checked in silver: it stays visible only in bronze.
 
 **Why this priority**: nothing can be quarantined or sent downstream until each event is
 classified. The flag is the single decision point of the whole split.
@@ -48,17 +48,15 @@ that break a rule.
    its flag is true.
 3. **Given** an event whose payment method is `'-----'`, **When** it is validated, **Then**
    its flag is true.
-4. **Given** an event whose rescued-data column is filled, **When** it is validated,
-   **Then** its flag is true.
-5. **Given** an event with no payload, or with a payload whose product and payment fields
+4. **Given** an event with no payload, or with a payload whose product and payment fields
    are empty, **When** it is validated, **Then** its flag is false.
-6. **Given** an event with a real product name, a non-zero value and a real payment method,
+5. **Given** an event with a real product name, a non-zero value and a real payment method,
    **When** it is validated, **Then** its flag is false.
-7. **Given** any run, **When** the validation table is compared with
+6. **Given** any run, **When** the validation table is compared with
    `workspace.bronze.dados_api`, **Then** it holds the same number of rows: validation adds
    a flag but removes nothing.
-8. **Given** the validation table, **When** its physical layout is inspected, **Then** it is
-   clustered by `fl_registro_invalido` and is not partitioned.
+7. **Given** the validation table, **When** its physical layout is inspected, **Then** it is
+   partitioned by `fl_registro_invalido`.
 
 ---
 
@@ -82,8 +80,7 @@ failed count equals the number of test events built to break it.
 **Acceptance Scenarios**:
 
 1. **Given** a completed run, **When** the quality view of the validation table is opened,
-   **Then** it lists `curso_invalido`, `valor_invalido`, `forma_pagamento_invalido` and
-   `registro_nao_conforme`.
+   **Then** it lists `curso_invalido`, `valor_invalido` and `forma_pagamento_invalido`.
 2. **Given** a known number of events that break one rule, **When** the run completes,
    **Then** that rule's failed count equals that number.
 3. **Given** events that break a rule, **When** the run completes, **Then** none of them is
@@ -113,12 +110,14 @@ each one broke.
 2. **Given** an event with its flag false, **When** the run completes, **Then** it is not in
    the quarantine table.
 3. **Given** a quarantined event, **When** it is compared with its bronze row, **Then**
-   every original field, including the nested payload and the lineage columns, has the same
-   value.
+   every field the boundary view delivers, including the nested payload and
+   `processing_time`, has the same value, and `source_file_name` and `_rescued_data` are
+   absent.
 4. **Given** a quarantined event that broke two rules, **When** it is read, **Then** both
    rule names are recorded on it.
-5. **Given** a quarantined event, **When** it is read, **Then** it states that it came from
-   the `API` source and when it was loaded into quarantine.
+5. **Given** a quarantined event, **When** it is read, **Then** it carries every column of
+   the validation table, including the flag and the validation time, states that it came
+   from the `API` source, and states when it was loaded into quarantine.
 6. **Given** a completed run followed by a run with no new events, **When** the quarantine
    table is counted, **Then** it has not grown.
 
@@ -164,8 +163,8 @@ them is in quarantine.
   text `'0.00'` is rejected, and `'0'`, `'0,00'` or `'R$ 0,00'` pass.
 - An event breaks all three content rules: it is quarantined once, with all three rule
   names.
-- A bronze event carries rescued data and also breaks a content rule: it is quarantined
-  once, with both rule names.
+- A bronze event carries rescued data: silver does not see it. The event is classified by
+  the three content rules only; its rescued content stays in bronze.
 - The same event is delivered twice in bronze (a file re-delivered): each bronze row is
   validated and routed on its own. Deduplication is not done here.
 - A run receives no new events: the validation and quarantine tables gain no rows.
@@ -179,9 +178,13 @@ them is in quarantine.
 
 - **FR-001**: The feature MUST provide a validation table
   `workspace.silver.temp_tb_validacao_api`, private to the pipeline, fed incrementally from
-  `workspace.bronze.dados_api`.
-- **FR-002**: The validation table MUST hold every bronze event, with every original
-  column unchanged, and MUST NOT drop, filter, deduplicate or alter any event.
+  `workspace.bronze.dados_api` through the boundary view `vw_bronze_dados_api`.
+- **FR-002**: The validation table MUST hold every bronze event, with every column the
+  boundary view delivers unchanged, and MUST NOT drop, filter, deduplicate or alter any
+  event.
+- **FR-002a**: The boundary view MUST deliver every bronze column except `source_file_name`
+  and `_rescued_data`, and MUST NOT filter, cast, rename or apply rules. Neither silver
+  table may carry those two columns (constitution v1.6.0, Principle I).
 - **FR-003**: The validation table MUST add a true/false column `fl_registro_invalido`
   that is true when at least one rule in FR-004 fails, and false otherwise. It MUST never be
   empty.
@@ -192,23 +195,27 @@ them is in quarantine.
   | `curso_invalido` | `payload.info_produto.product_name` is empty or is not `'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'` |
   | `valor_invalido` | `payload.info_pagamento.valor` is empty or is not `'0.00'` |
   | `forma_pagamento_invalido` | `payload.info_pagamento.forma_pagamento` is empty or is not `'-----'` |
-  | `registro_nao_conforme` | the rescued-data column is empty |
 
 - **FR-005**: Each rule in FR-004 MUST be declared on the validation table as a named
   quality expectation that measures without removing rows or stopping the run.
 - **FR-006**: The flag and the expectations MUST encode the same predicates, so that the
   flag is true for an event if and only if at least one expectation fails for it.
 - **FR-007**: The validation table MUST record, for each event, which rules it broke.
-- **FR-008**: The validation table MUST be clustered by `fl_registro_invalido`, so that
-  reading only the valid or only the invalid events stays efficient. It MUST NOT be
-  partitioned.
+- **FR-008**: The validation table MUST be partitioned by `fl_registro_invalido`, so that
+  reading only the valid or only the invalid events reads only their partition.
 - **FR-009**: The feature MUST provide a quarantine table in silver, fed incrementally from
   the validation table, holding every event whose flag is true and no other.
-- **FR-010**: A quarantine row MUST preserve the original event without transformation:
-  every bronze column, nested payload included, with its original value.
+- **FR-010**: A quarantine row MUST preserve the event as delivered by the boundary view,
+  without transformation: every column of the view, nested payload included, with its
+  original value.
 - **FR-011**: A quarantine row MUST record the names of the rules that rejected it.
 - **FR-012**: The validation and quarantine tables MUST carry `origem` with the literal
-  value `API` and `data_carga` with the time the row was loaded.
+  value `API` and `data_carga` with the time the row was validated. The quarantine table
+  MUST also carry `data_carga_quarentena`, the time the row entered quarantine.
+- **FR-012a**: The quarantine table MUST carry every column of the validation table, with
+  nothing excluded or replaced: the delivered event, `regras_violadas`,
+  `fl_registro_invalido`, `origem` and `data_carga`. All the evidence of a data issue is
+  then in one row (constitution v1.6.0, Principle IV; owner, 2026-10-18).
 - **FR-013**: For each run, the number of bronze API events MUST equal the number of valid
   events plus the number of quarantined events.
 - **FR-014**: Events whose flag is false MUST remain available in the validation table for
@@ -218,8 +225,11 @@ them is in quarantine.
   later run.
 - **FR-016**: Both tables MUST carry the table property `quality` with the value `silver`.
 - **FR-017**: The definitions MUST be written in SQL, in the current syntax of Lakeflow
-  Spark Declarative Pipelines, one file per table, named after its table, in the silver
-  folder of the pipeline source.
+  Spark Declarative Pipelines, one file per dataset, named `NN_<dataset>.sql` and numbered
+  from `01` in the silver folder of the pipeline source (constitution v1.6.0).
+- **FR-017a**: The bronze definition files MUST be renamed with the same numbering
+  (`01_dados_api.sql`, `02_dados_files.sql`, `03_dados_database.sql`), with no change to
+  their content.
 - **FR-018**: The validation table, the quarantine table, the rules and the flag MUST be
   described in the project documentation, replacing the descriptions of the earlier
   pipeline.
@@ -227,16 +237,21 @@ them is in quarantine.
 ### Key Entities
 
 - **API event**: one site visit from `workspace.bronze.dados_api`, with access time,
-  address, device, an optional nested payload (user, product, payment), the lineage columns
-  and the rescued-data column.
-- **Validation rule**: a named condition an event must meet. Four exist (FR-004). Each is
+  address, device, an optional nested payload (user, product, payment) and
+  `processing_time`. Its bronze-only columns `source_file_name` and `_rescued_data` stop at
+  the boundary view.
+- **Boundary view** (`vw_bronze_dados_api`): the API events as silver may see them: every
+  bronze column except `source_file_name` and `_rescued_data`. Pipeline-scoped, not
+  persisted.
+- **Validation rule**: a named condition an event must meet. Three exist (FR-004). Each is
   both a measured expectation and part of the flag.
 - **Validation table** (`temp_tb_validacao_api`): every API event plus its flag, the names
   of the rules it broke, its record source and its load time. Private to the pipeline.
 - **Invalid-record flag** (`fl_registro_invalido`): true when the event broke at least one
   rule. The only thing downstream tables use to choose their side of the split.
-- **Quarantine table**: the invalid events, unchanged, with the rules each one broke, its
-  record source and its load time.
+- **Quarantine table**: the invalid events with every column of the validation table: the
+  event unchanged, the rules each one broke, the flag, its record source and validation
+  time, plus the time it entered quarantine.
 
 ## Success Criteria *(mandatory)*
 
@@ -246,12 +261,12 @@ them is in quarantine.
   events are lost or duplicated.
 - **SC-002**: On a test set built to cover each rule, 100% of events built to break a rule
   have the flag true and 100% of the others have it false.
-- **SC-003**: The quality view lists all 4 rules by name, and each rule's failed count
+- **SC-003**: The quality view lists all 3 rules by name, and each rule's failed count
   equals the number of test events built to break it.
 - **SC-004**: Bronze events = valid events + quarantined events, with a difference of 0,
   for every run.
-- **SC-005**: 100% of quarantined events match their bronze row field for field and name at
-  least one rule.
+- **SC-005**: 100% of quarantined events match their bronze row field for field, apart
+  from the two excluded lineage columns, and name at least one rule.
 - **SC-006**: 100% of rows in both tables have `origem` = `API` and a non-empty
   `data_carga`.
 - **SC-007**: A second run with no new bronze events adds 0 rows to either table.
@@ -267,21 +282,22 @@ them is in quarantine.
   two rules. The request writes this rule without the empty case, but the payload is
   optional (visits without a purchase are normal), and the earlier pipeline's
   documentation states the same behavior.
-- "Partition it by fl_registro_invalido" is met by clustering on the flag (owner's
-  decision, 2026-10-18). Constitution Principle V forbids partitioning new datasets, and a
-  true/false column gives only two groups, so clustering serves the same purpose without an
-  exception.
+- "Partition it by fl_registro_invalido" is met by partitioning on the flag. Clustering was
+  chosen first (2026-10-18), but the platform rejects it:
+  `DELTA_CLUSTERING_COLUMNS_DATATYPE_NOT_SUPPORTED`, because a `BOOLEAN` column does not
+  support data skipping. The owner then decided to partition, as originally requested.
+  Constitution Principle V forbids `PARTITIONED BY` on new datasets, so this is a recorded
+  exception in the plan's Complexity Tracking.
 - The placeholders are matched exactly as written in the request, as text. No other
   spellings of zero or of an empty payment method are rejected.
-- `registro_nao_conforme` (rescued data) is added because the constitution requires rows
-  with rescued data to be quarantined for every source. Its name is a proposal and can be
-  changed during planning.
+- A fourth rule on rescued data was planned under constitution v1.5.0 and removed when the
+  owner amended it to v1.6.0 (2026-10-18). Rescued content stays visible only in bronze.
 - The quarantine table is named `workspace.silver.tb_quarentena`, the name the project
   documentation already uses. Only the API source is quarantined in this feature; if the
   other sources are quarantined later and differ in shape, the constitution's
   `tb_quarentena_<source>` naming applies to them.
-- The validation table reads bronze through an intermediate view that excludes nothing a
-  quarantine row must preserve. Whether that view exists is a planning decision.
+- The validation table reads bronze through the boundary view `vw_bronze_dados_api`,
+  which the constitution (v1.6.0) requires before each zone change.
 - Conformed silver tables (access, users, sales) and the gold layer are out of scope. They
   are later features and read the valid side of the split.
 - Reprocessing quarantined events after a fix is out of scope; the quarantine table makes

@@ -1,25 +1,22 @@
 <!--
 SYNC IMPACT REPORT (scratch material for review; remove before committing)
 
-Version change: 1.7.0 → 1.8.0
-Bump rationale: MINOR. A workflow rule is added (the dataset graph follows
-`doc/lakeflow_architecture.png`), and Principle VI's "one definition per key" is
-redefined: the same expression in every dataset that computes a key, instead of a single
-shared definition. No principle is removed. The redefinition relaxes where a key is
-written but keeps its intent, identical keys everywhere, now enforced by a check.
+Version change: 1.8.0 → 1.9.0
+Bump rationale: MINOR. A rule is added to Principle V: every append flow reads a temporary
+view that holds its whole query. The v1.8.0 workflow rule that features add only datasets
+the diagram shows gains one exception, for these flow views. Nothing is removed.
 
 Modified principles (titles unchanged):
-- VI. Record Source and Hash Keys: "One definition per key" now requires the same
-  expression, written identically in each dataset that computes the key, verified by a
-  check that the keys join. A shared view for keys is no longer required. Owner decision,
-  2026-10-18, after the silver graph had grown views that the target architecture does
-  not have.
+- V. Dataset Types and Flows: every `CREATE FLOW ... AS INSERT INTO` MUST read
+  `STREAM(<view>)` with `SELECT *`. Its temporary view, named
+  `vw_<zone>_<target>_<source>` (for example `vw_silver_tb_venda_api`), holds the
+  filtering, renaming, casting and keys. Owner, 2026-10-18: "It will become much simpler
+  to read the pipeline."
 
 Modified sections:
-- Development Workflow and Quality Gates: before specifying or planning a feature, the
-  target dataset graph in `doc/lakeflow_architecture.png` (with `doc/architecture.md`)
-  MUST be consulted. A feature MUST NOT add datasets the graph does not show, and every
-  difference MUST be justified in the plan.
+- Development Workflow and Quality Gates: the target-graph rule allows a flow view that
+  `doc/lakeflow_architecture.png` does not draw. The view must be named by the convention
+  above and listed in the plan.
 
 Added sections: none
 Removed sections: none
@@ -27,13 +24,12 @@ Removed sections: none
 Dependent templates: not modified by this command; they read the constitution at runtime.
 
 Follow-up TODOs:
-- Features 005 and 006: remove `vw_silver_eventos_api`, `vw_silver_vendas_arquivo`,
-  `vw_silver_usuario_api` and `vw_silver_usuario_arquivo`. `tb_acesso` and `tb_usuario`
-  read `temp_tb_validacao_api` and `vw_bronze_dados_files` directly, as the diagram shows,
-  and compute their keys inline. Renumber `src/pipeline/02_silver/` to the diagram's
-  reading order: `01_vw_bronze_dados_api`, `02_vw_bronze_dados_files`,
-  `03_temp_tb_validacao_api`, `04_tb_quarentena`, `05_tb_acesso`, `06_tb_usuario`. Both
-  tables need a refresh, which needs the owner's approval.
+- Feature 006: `tb_usuario`'s two append flows get views:
+  `06_vw_silver_tb_usuario_api.sql` and `07_vw_silver_tb_usuario_files.sql`, with
+  `08_tb_usuario.sql` holding the target and two `SELECT * FROM STREAM(<view>)` flows.
+  This needs a refresh of `tb_usuario` (owner's approval), together with the pending
+  refresh of `tb_acesso`.
+- Later features: `tb_venda` follows the same pattern, as the diagram already shows.
 - No deferred placeholders.
 -->
 
@@ -212,6 +208,12 @@ The dataset type follows from the nature of the source, not from habit.
 - Several streaming sources feeding one table MUST use one append flow per source
   (`CREATE FLOW ... AS INSERT INTO ... BY NAME`). `UNION` across streaming sources MUST NOT
   be used.
+- **Flow views.** Every append flow MUST read a temporary view that holds its whole query:
+  source, filters, renames, casts and keys. The flow itself is only
+  `INSERT INTO <target> BY NAME SELECT * FROM STREAM(<view>)`. The view is named
+  `vw_<zone>_<target>_<source>` (for example `vw_silver_tb_venda_api`), lives in its own
+  file numbered just before the target's file, and produces exactly the target's
+  columns.
 - Change feeds MUST be applied with `AUTO CDC INTO`, with explicit `KEYS`, `SEQUENCE BY`,
   and a delete condition placed before `SEQUENCE BY`. The plan MUST state whether the
   target is SCD type 1 or type 2. Queries for the current version of a type 2 table MUST
@@ -378,7 +380,9 @@ loss with an explicit "unknown".
 - Before specifying or planning a feature, the target dataset graph in
   `doc/lakeflow_architecture.png`, together with `doc/architecture.md`, MUST be consulted.
   A feature MUST NOT add datasets the graph does not show, and every difference from the
-  graph MUST be justified in the plan's Constitution Check.
+  graph MUST be justified in the plan's Constitution Check. The one exception is a flow
+  view required by Principle V: it is allowed where the graph does not draw it, and the
+  plan lists it.
 - Before writing or changing pipeline code, the `databricks-pipelines` skill and the
   reference file for each feature in use MUST be consulted. When the skill and this
   constitution disagree, the constitution prevails and the disagreement is raised as an
@@ -422,4 +426,4 @@ this repository.
   `databricks-pipelines` skill gives syntax and patterns. Both inform implementation;
   neither overrides this document.
 
-**Version**: 1.8.0 | **Ratified**: 2026-10-10 | **Last Amended**: 2026-10-18
+**Version**: 1.9.0 | **Ratified**: 2026-10-10 | **Last Amended**: 2026-10-18

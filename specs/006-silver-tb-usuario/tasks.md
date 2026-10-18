@@ -246,3 +246,36 @@ amended to v1.8.0 ("one expression per key"; the diagram is the target graph). C
 
 The task texts above keep the names that were current when they ran. The data model,
 contract, quickstart, research and plan were revised.
+
+**Flow views (constitution v1.9.0, owner, 2026-10-18, about 16:57 UTC)**: the owner
+asked that every append flow read a view that holds its whole query, so that the pipeline
+is simpler to read. The constitution was amended to v1.9.0 (Principle V, "Flow views"),
+with an exception to the target-graph rule for these views. The not-yet-run deploy of the
+v1.8.0 restructure was stopped before its dry run. New layout:
+- `06_vw_silver_tb_usuario_api.sql`: valid API events with a user, in the 10 columns;
+  `usuario_uuid` uses the same expression as `tb_acesso`;
+- `07_vw_silver_tb_usuario_files.sql`: `vw_bronze_dados_files` in the 10 columns;
+- `08_tb_usuario.sql`: the target and two flows, `silver_tb_usuario_api_flow` and
+  `silver_tb_usuario_files_flow` (renamed from `_arquivo_` to match the diagram's
+  `_files`), each `SELECT * FROM STREAM(<view>)`.
+
+These are the same two per-source views removed in the v1.8.0 restructure, now required
+by the constitution and named by its convention.
+
+**Deploy of v1.8.0 + v1.9.0** (owner-approved refresh of `tb_acesso` and `tb_usuario`
+only): dry run `be92b95a-...` **COMPLETED**; refresh `ac8f733d-...` **COMPLETED**.
+Results equal the pre-restructure numbers:
+- `tb_acesso`: 2,516,192 rows (`Mobile` 1,262,684, `Computador` 1,136,377, `unknown`
+  117,131), 0 impossible addresses, 0 repeated or empty keys.
+- `tb_usuario`: API 741,234, `ARQUIVO` 200,000 (all with company), 0 invalid sex, 0
+  repeated keys.
+- Expectations: `tb_acesso` 25,523 / 118,305 / 0 / 0; `tb_usuario` API 15,015 sex, 30,190
+  email, files 0.
+- `api_sem_acesso` = 7,525 (users whose access had the impossible address);
+  `sem_catalogo` = 0; `tb_quarentena` still 9,240.
+- **New check (one expression per key, v1.8.0)**: 14,862 distinct `usuario_uuid` in
+  `tb_acesso` have no row in `tb_usuario`. These are the sex-`X` users: `tb_usuario` drops
+  them, but `tb_acesso`'s rules do not look at sex, so their accesses stay. 15,015 `X` users
+  minus those whose access was also dropped for the address gives 14,862. The key
+  expressions agree.
+- The flows still appear as `workspace.bronze.silver_tb_usuario_*_flow` (open finding).

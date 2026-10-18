@@ -2,6 +2,23 @@
 
 **Feature**: [spec.md](spec.md) | **Date**: 2026-10-18
 
+## Revision 2026-10-18: constitution v1.9.0
+
+**Flow views (constitution v1.9.0, owner, 2026-10-18, about 16:57 UTC)**: the owner
+asked that every append flow read a view that holds its whole query, so that the pipeline
+is simpler to read. The constitution was amended to v1.9.0 (Principle V, "Flow views"),
+with an exception to the target-graph rule for these views. The not-yet-run deploy of the
+v1.8.0 restructure was stopped before its dry run. New layout:
+- `06_vw_silver_tb_usuario_api.sql`: valid API events with a user, in the 10 columns;
+  `usuario_uuid` uses the same expression as `tb_acesso`;
+- `07_vw_silver_tb_usuario_files.sql`: `vw_bronze_dados_files` in the 10 columns;
+- `08_tb_usuario.sql`: the target and two flows, `silver_tb_usuario_api_flow` and
+  `silver_tb_usuario_files_flow` (renamed from `_arquivo_` to match the diagram's
+  `_files`), each `SELECT * FROM STREAM(<view>)`.
+
+These are the same two per-source views removed in the v1.8.0 restructure, now required
+by the constitution and named by its convention.
+
 ## Revision 2026-10-18: constitution v1.8.0
 
 The owner asked why so many views were being created, and whether

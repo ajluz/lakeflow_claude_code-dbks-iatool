@@ -35,7 +35,9 @@ lakeflow/
 │           ├── 03_temp_tb_validacao_api.sql  Private validation table: 3 rules, fl_registro_invalido
 │           ├── 04_tb_quarentena.sql          Quarantine of the flagged API events
 │           ├── 05_tb_acesso.sql              Conformed access table: drop / record / commented fail rules
-│           └── 06_tb_usuario.sql             User table: two append flows, drop / record rules
+│           ├── 06_vw_silver_tb_usuario_api.sql    Flow view: API users in tb_usuario's columns
+│           ├── 07_vw_silver_tb_usuario_files.sql  Flow view: files users in tb_usuario's columns
+│           └── 08_tb_usuario.sql             User table: two append flows (SELECT * from each flow view), drop / record rules
 ├── explorations/            Auxiliary code: setup, generators and notebooks
 │   ├── setup/               Environment preparation, run by hand in step order
 │   │   ├── 01_schemas.sql                Creates the schemas and applies the access rule
@@ -63,7 +65,7 @@ far; gold is not built yet.
 |---|---|
 | Catalog / schemas | `workspace.bronze`, `workspace.silver`, `workspace.gold` |
 | Landing volume | `/Volumes/workspace/bronze/landing/{stream,files,database}` |
-| Pipeline datasets | 3 bronze streaming tables; in silver, 2 streaming views, 1 private streaming table and 3 streaming tables; gold not built yet |
+| Pipeline datasets | 3 bronze streaming tables; in silver, 4 streaming views, 1 private streaming table and 3 streaming tables; gold not built yet |
 | Created outside the pipeline | `workspace.gold.dim_tempo` (by `functions.py`) |
 | Target environment | Databricks Free Edition (streaming simulated with `availableNow`) |
 

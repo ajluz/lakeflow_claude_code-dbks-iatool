@@ -4,7 +4,8 @@ Every dataset of the pipeline, in dependency order. Tables carry a `quality`
 table property (`bronze`, `silver` or `gold`).
 
 The Bronze section, and in Silver the views `vw_bronze_dados_api` and
-`vw_bronze_dados_files` and the sections `temp_tb_validacao_api`, `tb_quarentena`,
+`vw_bronze_dados_files`, the flow views `vw_silver_tb_usuario_api` and
+`vw_silver_tb_usuario_files`, and the sections `temp_tb_validacao_api`, `tb_quarentena`,
 `tb_acesso` and `tb_usuario`, describe the pipeline as it is built today, under [src/pipeline/](../src/pipeline/). The other Silver datasets and the Gold
 section still describe the earlier pipeline, whose `code_tips/` folder is no longer
 in the repository; they will be replaced as those layers are rebuilt.
@@ -54,6 +55,8 @@ Exist only during a pipeline update and are not published to the catalog.
 |---|---|---|
 | `vw_bronze_dados_api` | [01](../src/pipeline/02_silver/01_vw_bronze_dados_api.sql) | `STREAM(bronze.dados_api)` minus `source_file_name`, `_rescued_data`; the bronze-to-silver boundary of the API source. As built |
 | `vw_bronze_dados_files` | [02](../src/pipeline/02_silver/02_vw_bronze_dados_files.sql) | `STREAM(bronze.dados_files)` minus `source_file_name`, `_rescued_data`; the bronze-to-silver boundary of the files source. As built |
+| `vw_silver_tb_usuario_api` | [06](../src/pipeline/02_silver/06_vw_silver_tb_usuario_api.sql) | flow view: valid API events with a user, in `tb_usuario`'s 10 columns, `usuario_uuid` included. As built |
+| `vw_silver_tb_usuario_files` | [07](../src/pipeline/02_silver/07_vw_silver_tb_usuario_files.sql) | flow view: `vw_bronze_dados_files` in `tb_usuario`'s 10 columns, `usuario_uuid` included. As built |
 | `vw_silver_tb_venda_api` | [07](../code_tips/02_silver/07_vw_silver_tb_venda_api.sql) | Sales shaped from valid API events that have a payment payload |
 | `vw_silver_tb_venda_files` | [08](../code_tips/02_silver/08_vw_silver_tb_venda_files.sql) | Sales shaped from partner files |
 | `vw_bronze_tb_curso` | [10](../code_tips/02_silver/10_vw_bronze_tb_curso.sql) | `bronze.dados_database` plus `origem = 'DATABASE'` |
@@ -141,7 +144,7 @@ Business key columns of the hash keys:
 | Key | Business key columns | Defined in |
 |---|---|---|
 | `acesso_uuid` | `timestamp_acesso`, `endereco_ip_acesso`, `local_acesso` | `05_tb_acesso.sql` |
-| `usuario_uuid` | `access_date` (as timestamp), `payload.info_usuario.nome` | `05_tb_acesso.sql` and `06_tb_usuario.sql`, same expression |
+| `usuario_uuid` | `access_date` (as timestamp), `payload.info_usuario.nome` | `05_tb_acesso.sql` and `06_vw_silver_tb_usuario_api.sql`, same expression |
 | `curso_uuid` | `payload.info_produto.product_name`; equals the catalog's `curso_uuid` (`md5(nome_curso)`) | `05_tb_acesso.sql` |
 
 The table shows the three expectation actions:
@@ -162,12 +165,13 @@ drops. `check_local_acesso` reported 118,305 failures on 2026-10-18, while the t
 
 ### tb_usuario
 
-[06_tb_usuario.sql](../src/pipeline/02_silver/06_tb_usuario.sql) — streaming table
-`workspace.silver.tb_usuario`. As built. Fed by two append flows (`INSERT INTO ... BY
-NAME`), one per source, each shaping its columns inline:
-- `silver_tb_usuario_api_flow` from `STREAM(workspace.silver.temp_tb_validacao_api)`, valid
-  events with a user;
-- `silver_tb_usuario_arquivo_flow` from `STREAM(vw_bronze_dados_files)`.
+[08_tb_usuario.sql](../src/pipeline/02_silver/08_tb_usuario.sql) — streaming table
+`workspace.silver.tb_usuario`. As built. Fed by two append flows, one per source. Each
+flow is only `INSERT INTO ... BY NAME SELECT * FROM STREAM(<view>)`; its logic lives in
+its flow view (constitution v1.9.0, Principle V):
+- `silver_tb_usuario_api_flow` from `vw_silver_tb_usuario_api` (valid events of
+  `temp_tb_validacao_api` with a user);
+- `silver_tb_usuario_files_flow` from `vw_silver_tb_usuario_files` (`vw_bronze_dados_files`).
 
 `usuario_uuid` is unique because each key occurs once in both sources. The table appends
 and does not merge, so uniqueness is verified after each load. A re-delivered employee
@@ -190,8 +194,8 @@ API rows come only from valid events that carry a user. Business key columns:
 
 | Key | Business key columns | Defined in |
 |---|---|---|
-| `usuario_uuid` (API) | `access_date` (as timestamp), `payload.info_usuario.nome` | `05_tb_acesso.sql` and `06_tb_usuario.sql`, same expression |
-| `usuario_uuid` (ARQUIVO) | `nome_empresa`, `nome_funcionario` | `06_tb_usuario.sql` |
+| `usuario_uuid` (API) | `access_date` (as timestamp), `payload.info_usuario.nome` | `05_tb_acesso.sql` and `06_vw_silver_tb_usuario_api.sql`, same expression |
+| `usuario_uuid` (ARQUIVO) | `nome_empresa`, `nome_funcionario` | `07_vw_silver_tb_usuario_files.sql` |
 
 | Expectation | Rule | On violation |
 |---|---|---|

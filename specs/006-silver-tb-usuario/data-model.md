@@ -8,9 +8,11 @@ workspace.silver.temp_tb_validacao_api       workspace.bronze.dados_files
         │        AND payload.info_usuario.nome        ▼
         │            IS NOT NULL               vw_bronze_dados_files   (boundary: drops source_file_name, _rescued_data)
         │                                             │
-        │ append (silver_tb_usuario_api_flow)         │ append (silver_tb_usuario_arquivo_flow)
+        ▼                                             ▼
+vw_silver_tb_usuario_api                       vw_silver_tb_usuario_files   (flow views: the 10 columns)
+        │ append (silver_tb_usuario_api_flow)         │ append (silver_tb_usuario_files_flow)
         └──────────────► workspace.silver.tb_usuario ◄┘
-                         streaming table, 3 expectations, columns shaped in each flow
+                         streaming table, 3 expectations
 ```
 
 These are the edges `temp_tb_validacao_api → tb_usuario` and
@@ -27,7 +29,7 @@ Nothing else.
 
 ## `workspace.silver.tb_usuario`
 
-Conformed silver table, published. Each flow shapes its source into these columns.
+Conformed silver table, published. Each flow view shapes its source into these columns (`06_vw_silver_tb_usuario_api.sql`, `07_vw_silver_tb_usuario_files.sql`).
 
 | Column | Type | API flow | Files flow | Rule |
 |---|---|---|---|---|
@@ -47,7 +49,7 @@ Exactly these 10 columns, in this order.
 | Property | Value | Requirement |
 |---|---|---|
 | Kind | streaming table, append-only | FR-001 |
-| Flows | `silver_tb_usuario_api_flow` (from `STREAM(workspace.silver.temp_tb_validacao_api)` where valid and with a user), `silver_tb_usuario_arquivo_flow` (from `STREAM(vw_bronze_dados_files)`), both `INSERT INTO ... BY NAME` | FR-005, FR-006 |
+| Flows | `silver_tb_usuario_api_flow` from `vw_silver_tb_usuario_api`, `silver_tb_usuario_files_flow` from `vw_silver_tb_usuario_files`, both `INSERT INTO ... BY NAME SELECT * FROM STREAM(<view>)` (constitution v1.9.0) | FR-005, FR-006 |
 | Uniqueness | `usuario_uuid` unique: each key occurs once in today's data; verified after each load, not enforced | FR-007 |
 | `quality` | `silver` | FR-012 |
 | Hash key business columns | API: `access_date` (as timestamp), `payload.info_usuario.nome`. Files: `nome_empresa`, `nome_funcionario` | FR-015 |

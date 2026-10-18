@@ -17,14 +17,20 @@ every table rather than a single shared definition. The first design also used
 | File | Dataset | Reads |
 |---|---|---|
 | `src/pipeline/02_silver/02_vw_bronze_dados_files.sql` | `vw_bronze_dados_files` (temporary view) | `STREAM(workspace.bronze.dados_files)` |
-| `src/pipeline/02_silver/06_tb_usuario.sql` | `workspace.silver.tb_usuario` and its two flows | `STREAM(workspace.silver.temp_tb_validacao_api)`, `STREAM(vw_bronze_dados_files)` |
+| `src/pipeline/02_silver/06_vw_silver_tb_usuario_api.sql` | `vw_silver_tb_usuario_api` (flow view) | `STREAM(workspace.silver.temp_tb_validacao_api)`, valid events with a user |
+| `src/pipeline/02_silver/07_vw_silver_tb_usuario_files.sql` | `vw_silver_tb_usuario_files` (flow view) | `STREAM(vw_bronze_dados_files)` |
+| `src/pipeline/02_silver/08_tb_usuario.sql` | `workspace.silver.tb_usuario` and its two flows | the two flow views |
 
 ## `02_vw_bronze_dados_files.sql`
 
 `CREATE TEMPORARY VIEW vw_bronze_dados_files COMMENT '<Portuguese>' AS SELECT * EXCEPT (source_file_name, _rescued_data) FROM STREAM(workspace.bronze.dados_files)`.
 Nothing else.
 
-## `06_tb_usuario.sql`
+## Flow views and `08_tb_usuario.sql`
+
+Each flow view selects exactly the 10 columns of the data model; the API view keeps the
+`WHERE NOT fl_registro_invalido AND payload.info_usuario.nome IS NOT NULL` filter.
+Constitution v1.9.0 requires every append flow to read such a view.
 
 ```sql
 CREATE OR REFRESH STREAMING TABLE workspace.silver.tb_usuario (
@@ -37,27 +43,23 @@ TBLPROPERTIES ("quality" = "silver");
 
 CREATE FLOW silver_tb_usuario_api_flow AS
 INSERT INTO workspace.silver.tb_usuario BY NAME
-SELECT <the 10 API columns of the data model>
-FROM STREAM(workspace.silver.temp_tb_validacao_api)
-WHERE NOT fl_registro_invalido
-  AND payload.info_usuario.nome IS NOT NULL;
+SELECT * FROM STREAM(vw_silver_tb_usuario_api);
 
-CREATE FLOW silver_tb_usuario_arquivo_flow AS
+CREATE FLOW silver_tb_usuario_files_flow AS
 INSERT INTO workspace.silver.tb_usuario BY NAME
-SELECT <the 10 files columns of the data model>
-FROM STREAM(vw_bronze_dados_files);
+SELECT * FROM STREAM(vw_silver_tb_usuario_files);
 ```
 
-Both flows list the same 10 column names, in the same order and with the same types.
-The API `usuario_uuid` expression is character for character the same as in
-`05_tb_acesso.sql`.
+Both flow views list the same 10 column names, in the same order and with the same
+types. The API `usuario_uuid` expression in `06_vw_silver_tb_usuario_api.sql` is character
+for character the same as in `05_tb_acesso.sql`.
 
 ## What a definition must not contain
 
 | Forbidden | Why |
 |---|---|
 | `UNION` across the two sources; `AUTO CDC` | Principle V: one append flow per source; the owner's choice of append flows |
-| a view between the validation table or `vw_bronze_dados_files` and `tb_usuario` | the graph of `doc/lakeflow_architecture.png` (constitution v1.8.0) |
+| any query logic in a flow beyond `SELECT * FROM STREAM(<flow view>)`; any view other than the two flow views | constitution v1.9.0 (flow views) and v1.8.0 (graph) |
 | a read of `workspace.bronze.dados_files` outside `vw_bronze_dados_files`, or of bronze API data | Principle I; feature 004's consumer rule |
 | anything in `vw_bronze_dados_files` beyond excluding the two lineage columns | Principle I |
 | an API `usuario_uuid` expression that differs from `tb_acesso`'s | Principle VI (v1.8.0) |

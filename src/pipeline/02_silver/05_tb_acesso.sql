@@ -1,0 +1,34 @@
+-- Camada silver: acessos ao site vindos da API, um registro por acesso válido.
+-- As expectativas mostram as três ações possíveis:
+--   check_endereco_ip_acesso descarta a linha (exclusão declarada, não vai para a quarentena;
+--     constituição v1.7.0, Princípio IV);
+--   check_local_acesso apenas mede;
+--   a variante FAIL UPDATE, comentada logo abaixo, interromperia a atualização.
+-- Para ativá-la, comente a linha ativa de check_local_acesso e descomente a outra.
+
+CREATE OR REFRESH STREAMING TABLE workspace.silver.tb_acesso (
+  CONSTRAINT check_endereco_ip_acesso EXPECT (endereco_ip_acesso IS NULL OR endereco_ip_acesso != '999.999.999.999') ON VIOLATION DROP ROW,
+  CONSTRAINT check_local_acesso       EXPECT (local_acesso != 'unknown'),
+  -- CONSTRAINT check_local_acesso    EXPECT (local_acesso != 'unknown') ON VIOLATION FAIL UPDATE,
+  CONSTRAINT check_timestamp_acesso   EXPECT (timestamp_acesso IS NOT NULL),
+  CONSTRAINT check_acesso_uuid        EXPECT (acesso_uuid IS NOT NULL)
+)
+COMMENT 'Acessos ao site vindos da API: um registro por acesso válido, com local de acesso e chaves de acesso, usuário e curso.'
+TBLPROPERTIES ("quality" = "silver")
+AS
+SELECT
+  timestamp_acesso,
+  ip_address AS endereco_ip_acesso,
+  CASE WHEN lower(access_point) IN ('iphone', 'android') THEN 'Mobile'
+       WHEN lower(access_point) IN ('chrome', 'safari', 'firefox') THEN 'Computador'
+       ELSE 'unknown'
+  END AS local_acesso,
+  md5(concat_ws('||',
+      coalesce(cast(timestamp_acesso AS STRING), ''),
+      coalesce(endereco_ip_acesso, ''),
+      coalesce(local_acesso, ''))) AS acesso_uuid,
+  usuario_uuid,
+  curso_uuid,
+  'API' AS origem,
+  current_timestamp() AS data_carga
+FROM STREAM(vw_silver_eventos_api);

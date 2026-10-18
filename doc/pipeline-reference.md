@@ -3,9 +3,9 @@
 Every dataset of the pipeline, in dependency order. Tables carry a `quality`
 table property (`bronze`, `silver` or `gold`).
 
-The Bronze section, and in Silver the view `vw_bronze_dados_api` and the sections
-`temp_tb_validacao_api` and `tb_quarentena`, describe the pipeline as it is built
-today, under [src/pipeline/](../src/pipeline/). The other Silver datasets and the Gold
+The Bronze section, and in Silver the views `vw_bronze_dados_api` and
+`vw_silver_eventos_api` and the sections `temp_tb_validacao_api`, `tb_quarentena` and
+`tb_acesso`, describe the pipeline as it is built today, under [src/pipeline/](../src/pipeline/). The other Silver datasets and the Gold
 section still describe the earlier pipeline, whose `code_tips/` folder is no longer
 in the repository; they will be replaced as those layers are rebuilt.
 
@@ -53,6 +53,7 @@ Exist only during a pipeline update and are not published to the catalog.
 | View | File | Definition |
 |---|---|---|
 | `vw_bronze_dados_api` | [01](../src/pipeline/02_silver/01_vw_bronze_dados_api.sql) | `STREAM(bronze.dados_api)` minus `source_file_name`, `_rescued_data`; the bronze-to-silver boundary of the API source. As built |
+| `vw_silver_eventos_api` | [04](../src/pipeline/02_silver/04_vw_silver_eventos_api.sql) | valid events of `temp_tb_validacao_api` (`NOT fl_registro_invalido`) plus `timestamp_acesso`, `usuario_uuid` and `curso_uuid`, the single definition of those keys for the API source; later API tables reuse them. As built |
 | `vw_bronze_dados_files` | [02](../code_tips/02_silver/02_vw_bronze_dados_files.sql) | `bronze.dados_files` minus `source_file_name`, `_rescued_data` |
 | `vw_silver_tb_venda_api` | [07](../code_tips/02_silver/07_vw_silver_tb_venda_api.sql) | Sales shaped from valid API events that have a payment payload |
 | `vw_silver_tb_venda_files` | [08](../code_tips/02_silver/08_vw_silver_tb_venda_files.sql) | Sales shaped from partner files |
@@ -114,28 +115,46 @@ one row:
 least one rule. There is no hash key, because quarantine is not a conformed table.
 
 **Reconciliation**: rows in `bronze.dados_api` = valid rows of the validation table +
-rows in `tb_quarentena`. No exclusion is documented.
+rows in `tb_quarentena`. Downstream of validation, one exclusion is declared: rows that
+`tb_acesso` drops through `check_endereco_ip_acesso`. They are not quarantined
+(constitution v1.7.0, Principle IV), and the rule's failed count records them.
 
 ### tb_acesso
 
-[05_tb_acesso.sql](../code_tips/02_silver/05_tb_acesso.sql) — streaming table.
-One row per valid API access event.
+[05_tb_acesso.sql](../src/pipeline/02_silver/05_tb_acesso.sql) — streaming table
+`workspace.silver.tb_acesso`. As built. One row per valid API access whose address is not
+`999.999.999.999`. It reads `STREAM(vw_silver_eventos_api)`.
 
 | Column | Derivation |
 |---|---|
-| `timestamp_acesso` | `access_date` as timestamp |
+| `timestamp_acesso` | `try_to_timestamp(access_date)`, from the view |
 | `endereco_ip_acesso` | `ip_address` |
-| `local_acesso` | `Mobile` for iphone/android, `Computador` for chrome/safari/firefox, otherwise `unknown` |
-| `acesso_uuid` | `md5(timestamp_acesso ‖ ip_address ‖ local_acesso)` |
-| `usuario_uuid` | `md5(timestamp_acesso ‖ payload.info_usuario.nome)` — null when there is no user payload |
-| `curso_uuid` | `md5(payload.info_produto.product_name)` |
+| `local_acesso` | `Mobile` for `iphone`/`android`, `Computador` for `chrome`/`safari`/`firefox`, otherwise `unknown` (case-insensitive) |
+| `acesso_uuid` | `md5(concat_ws('\|\|', timestamp_acesso, endereco_ip_acesso, local_acesso))`, each component cast to string and `coalesce`d to `''` |
+| `usuario_uuid` | from the view; null when the event has no user |
+| `curso_uuid` | from the view; null when the event has no product |
 | `origem` | `'API'` |
-| `data_carga` | load timestamp |
+| `data_carga` | `current_timestamp()` |
+
+Business key columns of the hash keys:
+
+| Key | Business key columns | Defined in |
+|---|---|---|
+| `acesso_uuid` | `timestamp_acesso`, `endereco_ip_acesso`, `local_acesso` | `05_tb_acesso.sql` |
+| `usuario_uuid` | `timestamp_acesso`, `payload.info_usuario.nome` | `04_vw_silver_eventos_api.sql` |
+| `curso_uuid` | `payload.info_produto.product_name`; equals the catalog's `curso_uuid` (`md5(nome_curso)`) | `04_vw_silver_eventos_api.sql` |
+
+The table shows the three expectation actions:
 
 | Expectation | Rule | On violation |
 |---|---|---|
-| `check_endereco_ip_acesso` | `endereco_ip_acesso != '999.999.999.999'` | drop row |
-| `check_local_acesso` | `local_acesso != 'unknown'` | record only (`FAIL UPDATE` is commented out) |
+| `check_endereco_ip_acesso` | `endereco_ip_acesso` is null or not `'999.999.999.999'` | drop row; a declared exclusion, not quarantined (constitution v1.7.0, Principle IV) |
+| `check_local_acesso` | `local_acesso != 'unknown'` | record only; the `FAIL UPDATE` variant is on the next line, commented out |
+| `check_timestamp_acesso` | `timestamp_acesso IS NOT NULL` | record only |
+| `check_acesso_uuid` | `acesso_uuid IS NOT NULL` | record only; `acesso_uuid` is also unique in the table |
+
+**Reconciliation**: valid API events = rows in `tb_acesso` + rows dropped by
+`check_endereco_ip_acesso`. On 2026-10-18 that was 2,541,715 = 2,516,192 + 25,523.
 
 ### tb_usuario
 

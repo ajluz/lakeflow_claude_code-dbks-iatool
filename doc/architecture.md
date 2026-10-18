@@ -48,6 +48,7 @@ flowchart LR
 
     subgraph silver[Silver]
         V1([vw_bronze_dados_api])
+        V6([vw_silver_eventos_api])
         V2([vw_bronze_dados_files])
         T1[temp_tb_validacao_api]
         S1[tb_quarentena]
@@ -74,7 +75,7 @@ flowchart LR
     L3 --> B3 --> V5 --> S5
 
     T1 --> S1
-    T1 --> S2
+    T1 --> V6 --> S2
     T1 --> S3
     T1 --> V3
     V2 --> S3
@@ -118,7 +119,8 @@ The graph as rendered by the pipeline UI:
 | Expectations that only record violations | [02_temp_tb_validacao_api.sql](../src/pipeline/02_silver/02_temp_tb_validacao_api.sql) |
 | Quarantine pattern (flag column + split) | [02_temp_tb_validacao_api.sql](../src/pipeline/02_silver/02_temp_tb_validacao_api.sql), [03_tb_quarentena.sql](../src/pipeline/02_silver/03_tb_quarentena.sql) |
 | Partitioning by a Boolean flag (`PARTITIONED BY`; `CLUSTER BY` rejects `BOOLEAN`) | [02_temp_tb_validacao_api.sql](../src/pipeline/02_silver/02_temp_tb_validacao_api.sql) |
-| Expectations with `ON VIOLATION DROP ROW` | [05_tb_acesso.sql](../code_tips/02_silver/05_tb_acesso.sql), [06_tb_usuario.sql](../code_tips/02_silver/06_tb_usuario.sql) |
+| Expectations with `ON VIOLATION DROP ROW` (declared exclusion, not quarantined) | [05_tb_acesso.sql](../src/pipeline/02_silver/05_tb_acesso.sql), [06_tb_usuario.sql](../code_tips/02_silver/06_tb_usuario.sql) |
+| Expectation kept as a commented `FAIL UPDATE` | [05_tb_acesso.sql](../src/pipeline/02_silver/05_tb_acesso.sql) |
 | Combining sources with `UNION ALL` in one query | [06_tb_usuario.sql](../code_tips/02_silver/06_tb_usuario.sql) |
 | Multiple append flows into one table (`CREATE FLOW ... INSERT INTO ... BY NAME`) | [09_tb_venda.sql](../code_tips/02_silver/09_tb_venda.sql) |
 | `AUTO CDC` as SCD type 1 | [11_tb_curso.sql](../code_tips/02_silver/11_tb_curso.sql) |

@@ -32,7 +32,9 @@ lakeflow/
 │       └── 02_silver/       Validation and quarantine (API source so far)
 │           ├── 01_vw_bronze_dados_api.sql    Boundary view: bronze events minus source_file_name, _rescued_data
 │           ├── 02_temp_tb_validacao_api.sql  Private validation table: 3 rules, fl_registro_invalido
-│           └── 03_tb_quarentena.sql          Quarantine of the flagged API events
+│           ├── 03_tb_quarentena.sql          Quarantine of the flagged API events
+│           ├── 04_vw_silver_eventos_api.sql  Valid API events + timestamp_acesso, usuario_uuid, curso_uuid
+│           └── 05_tb_acesso.sql              Conformed access table: drop / record / commented fail rules
 ├── explorations/            Auxiliary code: setup, generators and notebooks
 │   ├── setup/               Environment preparation, run by hand in step order
 │   │   ├── 01_schemas.sql                Creates the schemas and applies the access rule
@@ -60,7 +62,7 @@ far; gold is not built yet.
 |---|---|
 | Catalog / schemas | `workspace.bronze`, `workspace.silver`, `workspace.gold` |
 | Landing volume | `/Volumes/workspace/bronze/landing/{stream,files,database}` |
-| Pipeline datasets | 3 bronze streaming tables; in silver, 1 streaming view, 1 private streaming table and 1 streaming table; gold not built yet |
+| Pipeline datasets | 3 bronze streaming tables; in silver, 2 streaming views, 1 private streaming table and 2 streaming tables; gold not built yet |
 | Created outside the pipeline | `workspace.gold.dim_tempo` (by `functions.py`) |
 | Target environment | Databricks Free Edition (streaming simulated with `availableNow`) |
 

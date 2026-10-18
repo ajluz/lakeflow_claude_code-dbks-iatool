@@ -1,22 +1,25 @@
 <!--
 SYNC IMPACT REPORT (scratch material for review; remove before committing)
 
-Version change: 1.6.0 → 1.7.0
-Bump rationale: MINOR. Principle IV gains a bounded way to drop rows without quarantine,
-and Principle III's description of `DROP ROW` points to it. No principle is removed or
-renamed. The change relaxes a prohibition under explicit conditions; it does not reverse
-the principle, since quarantine stays the default for rejection rules.
+Version change: 1.7.0 → 1.8.0
+Bump rationale: MINOR. A workflow rule is added (the dataset graph follows
+`doc/lakeflow_architecture.png`), and Principle VI's "one definition per key" is
+redefined: the same expression in every dataset that computes a key, instead of a single
+shared definition. No principle is removed. The redefinition relaxes where a key is
+written but keeps its intent, identical keys everywhere, now enforced by a check.
 
 Modified principles (titles unchanged):
-- III. Data Quality Through Expectations: the `DROP ROW` action line now refers to both
-  ways Principle IV allows it.
-- IV. Quarantine, Never Silently Discard: `ON VIOLATION DROP ROW` without quarantine is
-  allowed for a conformed silver table's own rule, when the feature's plan names the rule
-  and says why its rows need not be kept. The rule's failed count is the measure of what
-  was dropped, and the rule is listed as a reconciliation exclusion in
-  `doc/pipeline-reference.md`. Owner decision, 2026-10-18: "Not all constraints need to go
-  to the quarantine table. I want to show the idea behind each of the cases." Feature 005,
-  `tb_acesso.check_endereco_ip_acesso`, is the first use.
+- VI. Record Source and Hash Keys: "One definition per key" now requires the same
+  expression, written identically in each dataset that computes the key, verified by a
+  check that the keys join. A shared view for keys is no longer required. Owner decision,
+  2026-10-18, after the silver graph had grown views that the target architecture does
+  not have.
+
+Modified sections:
+- Development Workflow and Quality Gates: before specifying or planning a feature, the
+  target dataset graph in `doc/lakeflow_architecture.png` (with `doc/architecture.md`)
+  MUST be consulted. A feature MUST NOT add datasets the graph does not show, and every
+  difference MUST be justified in the plan.
 
 Added sections: none
 Removed sections: none
@@ -24,11 +27,13 @@ Removed sections: none
 Dependent templates: not modified by this command; they read the constitution at runtime.
 
 Follow-up TODOs:
-- Feature 005 (`specs/005-silver-tb-acesso/`): its plan must name
-  `check_endereco_ip_acesso` as a drop-without-quarantine rule and give the reason, and
-  `doc/pipeline-reference.md` must list it as a reconciliation exclusion of the API source.
-- Feature 004 is not affected: its rules only measure, and its rejected rows go to
-  quarantine.
+- Features 005 and 006: remove `vw_silver_eventos_api`, `vw_silver_vendas_arquivo`,
+  `vw_silver_usuario_api` and `vw_silver_usuario_arquivo`. `tb_acesso` and `tb_usuario`
+  read `temp_tb_validacao_api` and `vw_bronze_dados_files` directly, as the diagram shows,
+  and compute their keys inline. Renumber `src/pipeline/02_silver/` to the diagram's
+  reading order: `01_vw_bronze_dados_api`, `02_vw_bronze_dados_files`,
+  `03_temp_tb_validacao_api`, `04_tb_quarentena`, `05_tb_acesso`, `06_tb_usuario`. Both
+  tables need a refresh, which needs the owner's approval.
 - No deferred placeholders.
 -->
 
@@ -248,10 +253,12 @@ hubs, links, and satellites are out of scope.
     different keys collide.
   - The record source is part of the business key whenever two sources can issue the same
     identifier for different things.
-- **One definition per key.** The expression for a given hash key MUST be written once, in
-  the dataset that owns the entity or in a shared temporary view, and reused by every
-  dataset that references the entity. Recomputing the same key with a different expression
-  in another file is a violation.
+- **One expression per key.** Every dataset that computes a given hash key MUST use the
+  same expression, written identically, over the same business key columns. A key
+  computed with a different expression in another file is a violation. Each feature that
+  computes a key already computed elsewhere MUST verify that the two join, for example
+  that every user key in an access table exists in the user table. No shared view is
+  required to hold the expression.
 - **Uniqueness.** A hash key MUST be unique within its table. Each conformed silver table
   MUST declare an expectation that its hash key is not null, and uniqueness
   (`count(*) = count(DISTINCT <entidade>_uuid)`) MUST be verified before a change is
@@ -368,6 +375,10 @@ loss with an explicit "unknown".
 
 ## Development Workflow and Quality Gates
 
+- Before specifying or planning a feature, the target dataset graph in
+  `doc/lakeflow_architecture.png`, together with `doc/architecture.md`, MUST be consulted.
+  A feature MUST NOT add datasets the graph does not show, and every difference from the
+  graph MUST be justified in the plan's Constitution Check.
 - Before writing or changing pipeline code, the `databricks-pipelines` skill and the
   reference file for each feature in use MUST be consulted. When the skill and this
   constitution disagree, the constitution prevails and the disagreement is raised as an
@@ -411,4 +422,4 @@ this repository.
   `databricks-pipelines` skill gives syntax and patterns. Both inform implementation;
   neither overrides this document.
 
-**Version**: 1.7.0 | **Ratified**: 2026-10-10 | **Last Amended**: 2026-10-18
+**Version**: 1.8.0 | **Ratified**: 2026-10-10 | **Last Amended**: 2026-10-18

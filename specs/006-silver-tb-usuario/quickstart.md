@@ -8,8 +8,8 @@ Shapes are in [data-model.md](data-model.md) and
 
 ## Prerequisites
 
-- Features 004 and 005 are deployed. `vw_silver_eventos_api` exists in the pipeline.
-- The five files of this feature exist under `src/pipeline/02_silver/`.
+- Features 004 and 005 are deployed.
+- `02_vw_bronze_dados_files.sql` and `06_tb_usuario.sql` exist under `src/pipeline/02_silver/` (revised for constitution v1.8.0).
 - **Free Edition**:
   - Stop the SQL warehouse (`databricks warehouses stop f796ffb64302b6ba`) and wait about 4 minutes after the previous update before starting one.
   - Never stop the warehouse while queries are still running on it.
@@ -44,8 +44,8 @@ Expected on 2026-10-18:
 
 | Step | Command | Expected |
 |---|---|---|
-| Upload | `databricks workspace import-dir src/pipeline /Workspace/Users/arthur.luz@dataslight.com.br/lakeflow_dev/src/pipeline --overwrite --profile databricks-free` | files `06_` to `10_` appear in `02_silver/` as `FILE` |
-| Dry run | `databricks pipelines start-update <pipeline_id> --validate-only --profile databricks-free` | `COMPLETED`; the four views and `tb_usuario` are defined, with two append flows into `tb_usuario` |
+| Upload | `databricks workspace import-dir src/pipeline /Workspace/Users/arthur.luz@dataslight.com.br/lakeflow_dev/src/pipeline --overwrite --profile databricks-free` | `02_silver/` lists exactly `01_` to `06_`, all `FILE` |
+| Dry run | `databricks pipelines start-update <pipeline_id> --validate-only --profile databricks-free` | `COMPLETED`; `vw_bronze_dados_files` and `tb_usuario` are defined, with two append flows into `tb_usuario` |
 | Run | `databricks pipelines start-update <pipeline_id> --profile databricks-free` | `COMPLETED`, no failed flow |
 
 ## 3. Contents of `tb_usuario`

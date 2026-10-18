@@ -12,7 +12,7 @@ is `8d51ac7a-02be-4ce2-8afd-f4f263e448dd`.
 
 - Feature 004 is deployed: `temp_tb_validacao_api` and `tb_quarentena` exist and are
   filled.
-- The two files of this feature exist under `src/pipeline/02_silver/`.
+- `src/pipeline/02_silver/05_tb_acesso.sql` exists (revised for constitution v1.8.0: no shared view).
 - **Free Edition**: queries wake the SQL warehouse, which shares the serverless quota with
   the pipeline. Stop the warehouse (`databricks warehouses stop f796ffb64302b6ba`) and
   wait about 4 minutes after the previous update before starting one.
@@ -48,8 +48,8 @@ Expected on 2026-10-18: `validos` 2,541,715; `ip_invalido` 25,523; `mantidos` 2,
 
 | Step | Command | Expected |
 |---|---|---|
-| Upload | `databricks workspace import-dir src/pipeline /Workspace/Users/arthur.luz@dataslight.com.br/lakeflow_dev/src/pipeline --overwrite --profile databricks-free` | `04_vw_silver_eventos_api.sql` and `05_tb_acesso.sql` appear in `02_silver/` as `FILE` |
-| Dry run | `databricks pipelines start-update <pipeline_id> --validate-only --profile databricks-free` | `COMPLETED`; the events define `vw_silver_eventos_api` and `tb_acesso` |
+| Upload | `databricks workspace import-dir src/pipeline /Workspace/Users/arthur.luz@dataslight.com.br/lakeflow_dev/src/pipeline --overwrite --profile databricks-free` | `05_tb_acesso.sql` appears in `02_silver/` as `FILE`, and no `04_vw_silver_eventos_api.sql` remains |
+| Dry run | `databricks pipelines start-update <pipeline_id> --validate-only --profile databricks-free` | `COMPLETED`; the events define `tb_acesso`, reading `temp_tb_validacao_api` |
 | Run | `databricks pipelines start-update <pipeline_id> --profile databricks-free` | `COMPLETED`, no failed flow |
 
 No refresh is needed: both datasets are new.
@@ -122,4 +122,4 @@ rows, and the count of step 3 is unchanged.
 - `05_tb_acesso.sql` has the active `check_local_acesso` warn line, followed by the
   commented `FAIL UPDATE` line.
 - Neither file computes `uuid()`, `rand()` or a load time inside a key.
-- `usuario_uuid` and `curso_uuid` are computed only in `04_vw_silver_eventos_api.sql`; `05_tb_acesso.sql` only selects them.
+- The `usuario_uuid` expression in `05_tb_acesso.sql` is character for character the same as in `06_tb_usuario.sql`.

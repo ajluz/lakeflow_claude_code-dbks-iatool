@@ -2,6 +2,26 @@
 
 **Feature**: [spec.md](spec.md) | **Date**: 2026-10-18
 
+## Revision 2026-10-18: constitution v1.8.0
+
+The owner asked why so many views were being created, and whether
+`doc/lakeflow_architecture.png` had been considered. It had not. The owner chose to
+match the diagram:
+- **Graph**: `tb_usuario` reads `workspace.silver.temp_tb_validacao_api` (valid events
+  with a user) and `vw_bronze_dados_files` directly, as the diagram's edges show.
+  `vw_silver_eventos_api`, `vw_silver_vendas_arquivo`, `vw_silver_usuario_api` and
+  `vw_silver_usuario_arquivo` were removed. Each append flow shapes its columns inline.
+- **Keys**: the API `usuario_uuid` is computed in the flow, with the same expression as
+  `tb_acesso`. The files `usuario_uuid` is computed in its flow. Constitution v1.8.0
+  replaced "one definition per key" with "one expression per key".
+- **Files**: `02_vw_bronze_dados_files.sql` (was `06_`) and `06_tb_usuario.sql` (was
+  `10_`), in the diagram's reading order.
+- **Data**: the key values do not change, so the rows after the refresh are the same.
+  `tb_usuario` needs a refresh, which needs the owner's approval.
+
+The sections below record earlier designs (`AUTO CDC`, then shaping views) and remain as
+history.
+
 Sources consulted: constitution v1.7.0; the `databricks-pipelines` skill
 (`references/auto-cdc-sql.md`, `streaming-table-sql.md`, `expectations-sql.md`,
 `temporary-view-sql.md`); the Databricks reference page for `AUTO CDC INTO` in pipelines;

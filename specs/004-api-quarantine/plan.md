@@ -18,11 +18,11 @@ Technical approach, from [research.md](research.md): three SQL files under
 - `01_vw_bronze_dados_api.sql`: the boundary view. It reads
   `STREAM(workspace.bronze.dados_api)` and selects every column except the bronze-only
   `source_file_name` and `_rescued_data`.
-- `02_temp_tb_validacao_api.sql`: a private streaming table, partitioned by the flag. It
+- `03_temp_tb_validacao_api.sql`: a private streaming table, partitioned by the flag. It
   reads the view, declares the three rules of the request (null-safe) as warn-only
   expectations, and adds `regras_violadas` (the names of the failed rules), the flag
   `fl_registro_invalido` derived from it, `origem = 'API'` and `data_carga`.
-- `03_tb_quarentena.sql`: a published streaming table holding the flagged rows, with a
+- `04_tb_quarentena.sql`: a published streaming table holding the flagged rows, with a
   warn expectation that each one names a rule.
 
 The bronze files are renamed `01_`–`03_` with no content change.
@@ -135,8 +135,8 @@ src/
     │   └── 03_dados_database.sql           # was dados_database.sql
     └── 02_silver/                          # NEW folder
         ├── 01_vw_bronze_dados_api.sql      # NEW: boundary view, drops source_file_name and _rescued_data
-        ├── 02_temp_tb_validacao_api.sql    # NEW: private validation table, 3 rules, flag, partitioned
-        └── 03_tb_quarentena.sql            # NEW: quarantine of flagged API events
+        ├── 03_temp_tb_validacao_api.sql    # NEW: private validation table, 3 rules, flag, partitioned
+        └── 04_tb_quarentena.sql            # NEW: quarantine of flagged API events
 
 doc/
 ├── pipeline-reference.md                   # CHANGED: bronze file names; silver sections for the view and both tables

@@ -610,3 +610,9 @@ Impact Report still in the file.
 **Open**: T018. The owner needs to look at the Data quality tab of
 `temp_tb_validacao_api` in the pipeline UI. The event log already shows the three
 expectations with their metrics (T017).
+
+**File renumbering (2026-10-18, constitution v1.8.0)**: to follow the reading order of
+`doc/lakeflow_architecture.png`, the silver files were renumbered. `02_temp_tb_validacao_api.sql`
+became `03_temp_tb_validacao_api.sql`, and `03_tb_quarentena.sql` became
+`04_tb_quarentena.sql`; `02_` is now `vw_bronze_dados_files` (feature 006). Content is
+unchanged, so no dataset changed. Task texts above keep the names used when they ran.

@@ -48,11 +48,7 @@ flowchart LR
 
     subgraph silver[Silver]
         V1([vw_bronze_dados_api])
-        V6([vw_silver_eventos_api])
         V2([vw_bronze_dados_files])
-        V7([vw_silver_vendas_arquivo])
-        V8([vw_silver_usuario_api])
-        V9([vw_silver_usuario_arquivo])
         T1[temp_tb_validacao_api]
         S1[tb_quarentena]
         S2[tb_acesso]
@@ -78,10 +74,10 @@ flowchart LR
     L3 --> B3 --> V5 --> S5
 
     T1 --> S1
-    T1 --> V6 --> S2
-    V6 --> V8 --> S3
+    T1 --> S2
+    T1 --> S3
     T1 --> V3
-    V2 --> V7 --> V9 --> S3
+    V2 --> S3
     V2 --> V4
     V3 --> S4
     V4 --> S4
@@ -118,13 +114,13 @@ The graph as rendered by the pipeline UI:
 | Auto Loader ingestion (`cloud_files`) with schema inference | [01_bronze/](../code_tips/01_bronze/) |
 | File metadata column (`_metadata.file_path`) | [01_bronze/](../code_tips/01_bronze/) |
 | Temporary streaming views (boundary view excluding `source_file_name`, `_rescued_data`) | [01_vw_bronze_dados_api.sql](../src/pipeline/02_silver/01_vw_bronze_dados_api.sql) and the other `vw_` files |
-| Temporary (pipeline-private) streaming table | [02_temp_tb_validacao_api.sql](../src/pipeline/02_silver/02_temp_tb_validacao_api.sql) |
-| Expectations that only record violations | [02_temp_tb_validacao_api.sql](../src/pipeline/02_silver/02_temp_tb_validacao_api.sql) |
-| Quarantine pattern (flag column + split) | [02_temp_tb_validacao_api.sql](../src/pipeline/02_silver/02_temp_tb_validacao_api.sql), [03_tb_quarentena.sql](../src/pipeline/02_silver/03_tb_quarentena.sql) |
-| Partitioning by a Boolean flag (`PARTITIONED BY`; `CLUSTER BY` rejects `BOOLEAN`) | [02_temp_tb_validacao_api.sql](../src/pipeline/02_silver/02_temp_tb_validacao_api.sql) |
+| Temporary (pipeline-private) streaming table | [03_temp_tb_validacao_api.sql](../src/pipeline/02_silver/03_temp_tb_validacao_api.sql) |
+| Expectations that only record violations | [03_temp_tb_validacao_api.sql](../src/pipeline/02_silver/03_temp_tb_validacao_api.sql) |
+| Quarantine pattern (flag column + split) | [03_temp_tb_validacao_api.sql](../src/pipeline/02_silver/03_temp_tb_validacao_api.sql), [04_tb_quarentena.sql](../src/pipeline/02_silver/04_tb_quarentena.sql) |
+| Partitioning by a Boolean flag (`PARTITIONED BY`; `CLUSTER BY` rejects `BOOLEAN`) | [03_temp_tb_validacao_api.sql](../src/pipeline/02_silver/03_temp_tb_validacao_api.sql) |
 | Expectations with `ON VIOLATION DROP ROW` (declared exclusion, not quarantined) | [05_tb_acesso.sql](../src/pipeline/02_silver/05_tb_acesso.sql), [06_tb_usuario.sql](../code_tips/02_silver/06_tb_usuario.sql) |
 | Expectation kept as a commented `FAIL UPDATE` | [05_tb_acesso.sql](../src/pipeline/02_silver/05_tb_acesso.sql) |
-| Two append flows into one table, one per source (`CREATE FLOW ... INSERT INTO ... BY NAME`) | [10_tb_usuario.sql](../src/pipeline/02_silver/10_tb_usuario.sql) |
+| Two append flows into one table, one per source (`CREATE FLOW ... INSERT INTO ... BY NAME`) | [06_tb_usuario.sql](../src/pipeline/02_silver/06_tb_usuario.sql) |
 | Multiple append flows into one table (`CREATE FLOW ... INSERT INTO ... BY NAME`) | [09_tb_venda.sql](../code_tips/02_silver/09_tb_venda.sql) |
 | `AUTO CDC` as SCD type 1 | [11_tb_curso.sql](../code_tips/02_silver/11_tb_curso.sql) |
 | `AUTO CDC` as SCD type 2 (`__START_AT` / `__END_AT`) | [02_dim_curso.sql](../code_tips/03_gold/02_dim_curso.sql) |

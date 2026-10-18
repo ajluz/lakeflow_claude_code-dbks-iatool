@@ -2,6 +2,27 @@
 
 **Feature**: [spec.md](spec.md) | **Date**: 2026-10-18
 
+## Revision 2026-10-18: constitution v1.8.0
+
+The owner asked why so many views were being created, and whether
+`doc/lakeflow_architecture.png` had been considered. It had not: the specs and plans of
+features 005 and 006 were written without consulting the diagram. The owner chose to
+match the diagram:
+- **Graph**: `tb_acesso` reads `workspace.silver.temp_tb_validacao_api` directly, with
+  `WHERE NOT fl_registro_invalido`, as the diagram's edge `temp_tb_validacao_api →
+  tb_acesso` shows. `vw_silver_eventos_api` (file `04_`) was removed.
+- **Keys**: `timestamp_acesso`, `usuario_uuid` and `curso_uuid` are computed inline in
+  `tb_acesso`. `usuario_uuid` uses the same expression as `tb_usuario`, written character
+  for character the same. Constitution v1.8.0 replaced "one definition per key" with "one
+  expression per key" and made the diagram the target graph.
+- **Files**: `src/pipeline/02_silver/05_tb_acesso.sql` keeps its name; feature 004's files
+  were renumbered (`03_temp_tb_validacao_api.sql`, `04_tb_quarentena.sql`).
+- **Data**: the keys keep the same values, so the rows after the refresh are the same.
+  `tb_acesso` needs a refresh, which needs the owner's approval.
+
+The sections below record the first design and remain as history where they mention
+`vw_silver_eventos_api`.
+
 Sources consulted: constitution v1.7.0, the `databricks-pipelines` skill
 (`references/streaming-table-sql.md`, `references/expectations-sql.md`,
 `references/temporary-view-sql.md`), feature 004's contract

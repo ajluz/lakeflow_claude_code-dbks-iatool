@@ -175,7 +175,7 @@ design of feature 003 (`specs/003-bronze-ingestion/data-model.md`), the generato
 ## Decision 7: Files, folder and naming
 
 - **Decision**: three files in `src/pipeline/02_silver/`, numbered per constitution v1.6.0:
-  `01_vw_bronze_dados_api.sql`, `02_temp_tb_validacao_api.sql`, `03_tb_quarentena.sql`.
+  `01_vw_bronze_dados_api.sql`, `03_temp_tb_validacao_api.sql`, `04_tb_quarentena.sql`.
   The bronze files are renamed to `01_dados_api.sql`, `02_dados_files.sql` and
   `03_dados_database.sql`, with content unchanged, in the order of feature 003's contract.
   Each file holds one statement, with no `CREATE FLOW`.

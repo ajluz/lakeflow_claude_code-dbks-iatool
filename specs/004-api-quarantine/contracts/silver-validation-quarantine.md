@@ -15,8 +15,8 @@ numbered from `01` within its zone folder (constitution v1.6.0, Principle V).
 | File | Dataset | Reads |
 |---|---|---|
 | `src/pipeline/02_silver/01_vw_bronze_dados_api.sql` | `vw_bronze_dados_api` (temporary view) | `STREAM(workspace.bronze.dados_api)` |
-| `src/pipeline/02_silver/02_temp_tb_validacao_api.sql` | `workspace.silver.temp_tb_validacao_api` | `STREAM(vw_bronze_dados_api)` |
-| `src/pipeline/02_silver/03_tb_quarentena.sql` | `workspace.silver.tb_quarentena` | `STREAM(workspace.silver.temp_tb_validacao_api)` |
+| `src/pipeline/02_silver/03_temp_tb_validacao_api.sql` | `workspace.silver.temp_tb_validacao_api` | `STREAM(vw_bronze_dados_api)` |
+| `src/pipeline/02_silver/04_tb_quarentena.sql` | `workspace.silver.tb_quarentena` | `STREAM(workspace.silver.temp_tb_validacao_api)` |
 
 Bronze renames, with content unchanged:
 
@@ -39,7 +39,7 @@ table would be defined twice and the update would fail.
 | Select list | `* EXCEPT (source_file_name, _rescued_data)` and nothing else |
 | Source | `FROM STREAM(workspace.bronze.dados_api)` and nothing else |
 
-## `02_temp_tb_validacao_api.sql`
+## `03_temp_tb_validacao_api.sql`
 
 | Element | Contract |
 |---|---|
@@ -58,7 +58,7 @@ the validate-only run of 2026-10-18 both accepted it. If a later run rejects it,
 array in a subquery in the `FROM` clause and derive the flag outside it. The contract fixes
 the resulting columns, not the form.
 
-## `03_tb_quarentena.sql`
+## `04_tb_quarentena.sql`
 
 | Element | Contract |
 |---|---|

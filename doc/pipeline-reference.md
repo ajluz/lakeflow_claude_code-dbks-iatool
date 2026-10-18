@@ -4,8 +4,8 @@ Every dataset of the pipeline, in dependency order. Tables carry a `quality`
 table property (`bronze`, `silver` or `gold`).
 
 The Bronze section, and in Silver the views `vw_bronze_dados_api` and
-`vw_silver_eventos_api`, the four views of `tb_usuario`, and the sections
-`temp_tb_validacao_api`, `tb_quarentena`, `tb_acesso` and `tb_usuario`, describe the pipeline as it is built today, under [src/pipeline/](../src/pipeline/). The other Silver datasets and the Gold
+`vw_bronze_dados_files` and the sections `temp_tb_validacao_api`, `tb_quarentena`,
+`tb_acesso` and `tb_usuario`, describe the pipeline as it is built today, under [src/pipeline/](../src/pipeline/). The other Silver datasets and the Gold
 section still describe the earlier pipeline, whose `code_tips/` folder is no longer
 in the repository; they will be replaced as those layers are rebuilt.
 
@@ -53,18 +53,14 @@ Exist only during a pipeline update and are not published to the catalog.
 | View | File | Definition |
 |---|---|---|
 | `vw_bronze_dados_api` | [01](../src/pipeline/02_silver/01_vw_bronze_dados_api.sql) | `STREAM(bronze.dados_api)` minus `source_file_name`, `_rescued_data`; the bronze-to-silver boundary of the API source. As built |
-| `vw_silver_eventos_api` | [04](../src/pipeline/02_silver/04_vw_silver_eventos_api.sql) | valid events of `temp_tb_validacao_api` (`NOT fl_registro_invalido`) plus `timestamp_acesso`, `usuario_uuid` and `curso_uuid`, the single definition of those keys for the API source; later API tables reuse them. As built |
-| `vw_bronze_dados_files` | [06](../src/pipeline/02_silver/06_vw_bronze_dados_files.sql) | `STREAM(bronze.dados_files)` minus `source_file_name`, `_rescued_data`; the bronze-to-silver boundary of the files source. As built |
-| `vw_silver_vendas_arquivo` | [07](../src/pipeline/02_silver/07_vw_silver_vendas_arquivo.sql) | the files source plus `usuario_uuid` (`nome_empresa`, `nome_funcionario`), the single definition of that key; later sales tables reuse it. As built |
-| `vw_silver_usuario_api` | [08](../src/pipeline/02_silver/08_vw_silver_usuario_api.sql) | API users (valid events with a user) in `tb_usuario`'s shape. As built |
-| `vw_silver_usuario_arquivo` | [09](../src/pipeline/02_silver/09_vw_silver_usuario_arquivo.sql) | files users in `tb_usuario`'s shape. As built |
+| `vw_bronze_dados_files` | [02](../src/pipeline/02_silver/02_vw_bronze_dados_files.sql) | `STREAM(bronze.dados_files)` minus `source_file_name`, `_rescued_data`; the bronze-to-silver boundary of the files source. As built |
 | `vw_silver_tb_venda_api` | [07](../code_tips/02_silver/07_vw_silver_tb_venda_api.sql) | Sales shaped from valid API events that have a payment payload |
 | `vw_silver_tb_venda_files` | [08](../code_tips/02_silver/08_vw_silver_tb_venda_files.sql) | Sales shaped from partner files |
 | `vw_bronze_tb_curso` | [10](../code_tips/02_silver/10_vw_bronze_tb_curso.sql) | `bronze.dados_database` plus `origem = 'DATABASE'` |
 
 ### temp_tb_validacao_api
 
-[02_temp_tb_validacao_api.sql](../src/pipeline/02_silver/02_temp_tb_validacao_api.sql)
+[03_temp_tb_validacao_api.sql](../src/pipeline/02_silver/03_temp_tb_validacao_api.sql)
 — private streaming table `workspace.silver.temp_tb_validacao_api`, partitioned by
 `fl_registro_invalido`. As built.
 
@@ -104,7 +100,7 @@ and does not restate the rules. Flagged rows go to `tb_quarentena`.
 
 ### tb_quarentena
 
-[03_tb_quarentena.sql](../src/pipeline/02_silver/03_tb_quarentena.sql) — streaming
+[04_tb_quarentena.sql](../src/pipeline/02_silver/04_tb_quarentena.sql) — streaming
 table `workspace.silver.tb_quarentena`. As built.
 
 Every row of the validation table where `fl_registro_invalido` is true, with every
@@ -126,16 +122,17 @@ rows in `tb_quarentena`. Downstream of validation, one exclusion is declared: ro
 
 [05_tb_acesso.sql](../src/pipeline/02_silver/05_tb_acesso.sql) — streaming table
 `workspace.silver.tb_acesso`. As built. One row per valid API access whose address is not
-`999.999.999.999`. It reads `STREAM(vw_silver_eventos_api)`.
+`999.999.999.999`. It reads `STREAM(workspace.silver.temp_tb_validacao_api)` with
+`WHERE NOT fl_registro_invalido`, and computes its three keys inline.
 
 | Column | Derivation |
 |---|---|
-| `timestamp_acesso` | `try_to_timestamp(access_date)`, from the view |
+| `timestamp_acesso` | `try_to_timestamp(access_date)` |
 | `endereco_ip_acesso` | `ip_address` |
 | `local_acesso` | `Mobile` for `iphone`/`android`, `Computador` for `chrome`/`safari`/`firefox`, otherwise `unknown` (case-insensitive) |
 | `acesso_uuid` | `md5(concat_ws('\|\|', timestamp_acesso, endereco_ip_acesso, local_acesso))`, each component cast to string and `coalesce`d to `''` |
-| `usuario_uuid` | from the view; null when the event has no user |
-| `curso_uuid` | from the view; null when the event has no product |
+| `usuario_uuid` | `md5(concat_ws('\|\|', coalesce(cast(try_to_timestamp(access_date) AS STRING), ''), payload.info_usuario.nome))`; null when the event has no user |
+| `curso_uuid` | `md5(payload.info_produto.product_name)`; null when the event has no product |
 | `origem` | `'API'` |
 | `data_carga` | `current_timestamp()` |
 
@@ -144,8 +141,8 @@ Business key columns of the hash keys:
 | Key | Business key columns | Defined in |
 |---|---|---|
 | `acesso_uuid` | `timestamp_acesso`, `endereco_ip_acesso`, `local_acesso` | `05_tb_acesso.sql` |
-| `usuario_uuid` | `timestamp_acesso`, `payload.info_usuario.nome` | `04_vw_silver_eventos_api.sql` |
-| `curso_uuid` | `payload.info_produto.product_name`; equals the catalog's `curso_uuid` (`md5(nome_curso)`) | `04_vw_silver_eventos_api.sql` |
+| `usuario_uuid` | `access_date` (as timestamp), `payload.info_usuario.nome` | `05_tb_acesso.sql` and `06_tb_usuario.sql`, same expression |
+| `curso_uuid` | `payload.info_produto.product_name`; equals the catalog's `curso_uuid` (`md5(nome_curso)`) | `05_tb_acesso.sql` |
 
 The table shows the three expectation actions:
 
@@ -165,11 +162,12 @@ drops. `check_local_acesso` reported 118,305 failures on 2026-10-18, while the t
 
 ### tb_usuario
 
-[10_tb_usuario.sql](../src/pipeline/02_silver/10_tb_usuario.sql) — streaming table
+[06_tb_usuario.sql](../src/pipeline/02_silver/06_tb_usuario.sql) — streaming table
 `workspace.silver.tb_usuario`. As built. Fed by two append flows (`INSERT INTO ... BY
-NAME`), one per source:
-- `silver_tb_usuario_api_flow` from `vw_silver_usuario_api`;
-- `silver_tb_usuario_arquivo_flow` from `vw_silver_usuario_arquivo`.
+NAME`), one per source, each shaping its columns inline:
+- `silver_tb_usuario_api_flow` from `STREAM(workspace.silver.temp_tb_validacao_api)`, valid
+  events with a user;
+- `silver_tb_usuario_arquivo_flow` from `STREAM(vw_bronze_dados_files)`.
 
 `usuario_uuid` is unique because each key occurs once in both sources. The table appends
 and does not merge, so uniqueness is verified after each load. A re-delivered employee
@@ -177,7 +175,7 @@ would show up as a repeated key.
 
 | Column | From API | From files |
 |---|---|---|
-| `usuario_uuid` | from `vw_silver_eventos_api` | from `vw_silver_vendas_arquivo` |
+| `usuario_uuid` | `md5(concat_ws('\|\|', coalesce(cast(try_to_timestamp(access_date) AS STRING), ''), payload.info_usuario.nome))` (same expression as `tb_acesso`) | `md5(concat_ws('\|\|', coalesce(nome_empresa, ''), coalesce(nome_funcionario, '')))` |
 | `nome_usuario` | `payload.info_usuario.nome` | `nome_funcionario` |
 | `email_usuario` | `payload.info_usuario.email` | `email_funcionario` |
 | `idade_usuario` | `try_cast(payload.info_usuario.idade AS INT)` | `try_cast(idade AS INT)` |
@@ -192,8 +190,8 @@ API rows come only from valid events that carry a user. Business key columns:
 
 | Key | Business key columns | Defined in |
 |---|---|---|
-| `usuario_uuid` (API) | `timestamp_acesso`, `payload.info_usuario.nome` | `04_vw_silver_eventos_api.sql` |
-| `usuario_uuid` (ARQUIVO) | `nome_empresa`, `nome_funcionario` | `07_vw_silver_vendas_arquivo.sql` |
+| `usuario_uuid` (API) | `access_date` (as timestamp), `payload.info_usuario.nome` | `05_tb_acesso.sql` and `06_tb_usuario.sql`, same expression |
+| `usuario_uuid` (ARQUIVO) | `nome_empresa`, `nome_funcionario` | `06_tb_usuario.sql` |
 
 | Expectation | Rule | On violation |
 |---|---|---|

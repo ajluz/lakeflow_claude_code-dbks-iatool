@@ -422,3 +422,18 @@ uncommitted at review time.
 
 **Open**: T013 (owner). In the pipeline UI, confirm that the Data quality tab of
 `tb_acesso` shows the four expectations. The event log already shows them (T011).
+
+**Restructure for constitution v1.8.0** (owner, 2026-10-18, about 16:55 UTC): the owner
+asked why so many views existed, and whether `doc/lakeflow_architecture.png` had been
+considered. It had not been. The owner chose "match the diagram" and the constitution was
+amended to v1.8.0 ("one expression per key"; the diagram is the target graph). Changes:
+- removed `04_vw_silver_eventos_api.sql`, `07_vw_silver_vendas_arquivo.sql`,
+  `08_vw_silver_usuario_api.sql` and `09_vw_silver_usuario_arquivo.sql`;
+- renumbered `02_silver/` to `01_vw_bronze_dados_api`, `02_vw_bronze_dados_files`,
+  `03_temp_tb_validacao_api`, `04_tb_quarentena`, `05_tb_acesso`, `06_tb_usuario`;
+- `tb_acesso` and `tb_usuario` now read `temp_tb_validacao_api` and
+  `vw_bronze_dados_files` directly and compute their keys inline, with the API
+  `usuario_uuid` expression identical in both files.
+
+The task texts above keep the names that were current when they ran. The data model,
+contract, quickstart, research and plan were revised.

@@ -96,19 +96,19 @@ run for this feature.
 ## Phase 5: Deploy (shared by all stories)
 
 - [X] T009 Upload with `databricks workspace import-dir src/pipeline /Workspace/Users/arthur.luz@dataslight.com.br/lakeflow_dev/src/pipeline --overwrite --profile databricks-free`. Confirm that `02_silver/` lists ten `FILE`s, and that the five new copies are identical to the repository
-- [ ] T010 Following the quota conventions, dry run (`--validate-only`) to `COMPLETED`, with the four views and `tb_usuario` defined. Apply the allowed fallback if needed; report anything else
-- [ ] T011 Following the quota conventions, run the update to `COMPLETED` and record its `update_id`. If it fails after creating `tb_usuario` and a fix changes its columns, **stop and ask the owner** to approve a refresh of `workspace.silver.tb_usuario` only
+- [X] T010 Following the quota conventions, dry run (`--validate-only`) to `COMPLETED`, with the four views and `tb_usuario` defined. Apply the allowed fallback if needed; report anything else
+- [X] T011 Following the quota conventions, run the update to `COMPLETED` and record its `update_id`. If it fails after creating `tb_usuario` and a fix changes its columns, **stop and ask the owner** to approve a refresh of `workspace.silver.tb_usuario` only
 
 ---
 
 ## Phase 6: Validation of US1 and US2
 
-- [ ] T012 [US1] Run quickstart.md step 3 for the `API` rows:
+- [X] T012 [US1] Run quickstart.md step 3 for the `API` rows:
   - `linhas` = 741,234;
   - `com_empresa` = 0;
   - `sexo_invalido` = 0, `sem_chave` = 0, `sem_data_carga` = 0;
   - `api_sem_acesso`: record it, and confirm it equals the API users whose access `tb_acesso` dropped for the impossible address.
-- [ ] T013 [US2] Run quickstart.md step 3 for the `ARQUIVO` rows:
+- [X] T013 [US2] Run quickstart.md step 3 for the `ARQUIVO` rows:
   - `linhas` = 200,000 and `com_empresa` = 200,000;
   - `chave_arquivo_divergente` = 0;
   - across the whole table, `chaves_repetidas` = 0;
@@ -123,7 +123,7 @@ run for this feature.
 
 **Independent Test**: quickstart.md step 4. `check_sexo_usuario` failed = 15,015, `check_email_usuario` failed = 30,190, and candidates = rows + dropped.
 
-- [ ] T014 [US3] Run the expectations query of feature 004's quickstart step 4 for the update of T011. For dataset `tb_usuario`:
+- [X] T014 [US3] Run the expectations query of feature 004's quickstart step 4 for the update of T011. For dataset `tb_usuario`:
   - `check_sexo_usuario` failed 15,015;
   - `check_email_usuario` failed 30,190;
   - `check_usuario_uuid` failed 0;
@@ -196,3 +196,53 @@ FR-007, SC-002, Assumptions), research (Decisions 1–2), data model, contract, 
 plan (no deviation left), and the three docs were updated. The owner's snippet used
 `STREAMING LIVE TABLE`, which is legacy syntax forbidden by Principle II; the code uses
 `STREAMING TABLE`.
+
+**Refresh `58a9d2f8-cbf2-405c-a8a9-1f8e35cee88f`** (owner-approved, `tb_usuario` only,
+append flows): **COMPLETED**. It stands in for T010–T011 of the revised design.
+
+**T012** (API): 741,234 rows; `com_empresa` 0; `sexo_invalido`, `sem_chave`,
+`sem_data_carga` and `sem_idade` are 0. `api_sem_acesso` = 7,525. This equals the valid
+API users with valid sex whose event had the impossible address, so those users exist but
+`tb_acesso` dropped their access.
+
+**T013** (ARQUIVO): 200,000 rows; `com_empresa` 200,000; `chave_arquivo_divergente` 0.
+Whole table: 941,234 rows, `chaves_repetidas` 0. Columns: `usuario_uuid, nome_usuario,
+email_usuario, idade_usuario, sexo_usuario, estado_usuario, profissao_usuario,
+empresa_usuario, origem, data_carga`. `quality` = `silver`.
+
+**T014**: flows `silver_tb_usuario_api_flow` wrote 741,234 rows and
+`silver_tb_usuario_arquivo_flow` wrote 200,000. Expectations:
+
+| flow | rule | passed | failed |
+|---|---|---|---|
+| api | `check_sexo_usuario` | 741,234 | 15,015 |
+| api | `check_email_usuario` | 726,059 | 30,190 |
+| api | `check_usuario_uuid` | 756,249 | 0 |
+| arquivo | all three | 200,000 | 0 |
+
+Reconciliation: 956,249 candidates = 941,234 rows + 15,015 dropped. `tb_quarentena` is
+still 9,240. The table holds 29,599 invalid emails, 591 fewer than the rule's 30,190,
+because those 591 rows were dropped for sex. Every expectation counts all incoming rows
+(feature 005's finding).
+
+**Finding (open, owner)**: unqualified flow names take the pipeline's default schema.
+The event log names the flows `workspace.bronze.silver_tb_usuario_api_flow` and
+`workspace.bronze.silver_tb_usuario_arquivo_flow`. The data is correct. Renaming an append
+flow restarts it from the beginning and would duplicate every row, so a fix (qualified
+flow names, or default schema `silver` in the pipeline settings) needs a refresh of
+`tb_usuario` and the owner's approval. Not changed.
+
+**Restructure for constitution v1.8.0** (owner, 2026-10-18, about 16:55 UTC): the owner
+asked why so many views existed, and whether `doc/lakeflow_architecture.png` had been
+considered. It had not been. The owner chose "match the diagram" and the constitution was
+amended to v1.8.0 ("one expression per key"; the diagram is the target graph). Changes:
+- removed `04_vw_silver_eventos_api.sql`, `07_vw_silver_vendas_arquivo.sql`,
+  `08_vw_silver_usuario_api.sql` and `09_vw_silver_usuario_arquivo.sql`;
+- renumbered `02_silver/` to `01_vw_bronze_dados_api`, `02_vw_bronze_dados_files`,
+  `03_temp_tb_validacao_api`, `04_tb_quarentena`, `05_tb_acesso`, `06_tb_usuario`;
+- `tb_acesso` and `tb_usuario` now read `temp_tb_validacao_api` and
+  `vw_bronze_dados_files` directly and compute their keys inline, with the API
+  `usuario_uuid` expression identical in both files.
+
+The task texts above keep the names that were current when they ran. The data model,
+contract, quickstart, research and plan were revised.

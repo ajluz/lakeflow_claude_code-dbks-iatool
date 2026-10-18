@@ -1,70 +1,34 @@
 <!--
 SYNC IMPACT REPORT (scratch material for review; remove before committing)
 
-Version change: 1.5.0 → 1.6.0
-Bump rationale: MINOR. Three rules are added (numbered scripts per zone; a boundary view
-before each zone change; bronze and silver declared as streaming only) and Principle IV
-is narrowed by owner decision: the
-`_rescued_data` quarantine clauses are removed and quarantine preservation is redefined
-relative to the boundary view. No principle is removed or renamed, and the removal
-relaxes an obligation rather than reversing one. MAJOR was considered, because a clause
-of Principle IV is redefined; MINOR was chosen because every principle keeps its intent
-and no compliant dataset becomes wrong in meaning, only in shape.
+Version change: 1.6.0 → 1.7.0
+Bump rationale: MINOR. Principle IV gains a bounded way to drop rows without quarantine,
+and Principle III's description of `DROP ROW` points to it. No principle is removed or
+renamed. The change relaxes a prohibition under explicit conditions; it does not reverse
+the principle, since quarantine stays the default for rejection rules.
 
 Modified principles (titles unchanged):
-- I. Medallion Architecture: new rule that every read across a zone boundary goes
-  through a temporary view excluding `source_file_name` and `_rescued_data`, and that
-  silver and gold tables never carry those columns. The `gold.dim_curso` exception now
-  reads the bronze change feed through such a view.
-- IV. Quarantine, Never Silently Discard: the validation table reads the boundary view.
-  "Rows whose `_rescued_data` is not null MUST be routed to quarantine" and
-  "`_rescued_data` MUST NOT be discarded before that check" are removed (owner,
-  2026-10-18): rescued content stays visible only in bronze. A quarantine row preserves
-  the record as delivered by the boundary view. New rule (owner, 2026-10-18): a
-  quarantine table carries every column of its validation table, flag and validation
-  `data_carga` included, and adds `data_carga_quarentena`.
-- V. Dataset Types and Flows: files are named `NN_<dataset>.sql`, numbered per zone
-  folder. Bronze and silver datasets are all declared as streaming (streaming tables, or
-  temporary views reading `STREAM(...)`); materialized views are forbidden there. The
-  pipeline's execution mode decides stream or batch. Gold keeps materialized views for
-  full-scan results. Combining logic in silver must be streaming (append flows,
-  `AUTO CDC`, stream-static joins); full recomputation belongs in gold. Private
-  materialized views are allowed in gold only. Owner request, 2026-10-18; the request text
-  ended at "except for the gold layer that", read here as "gold may use materialized
-  views".
-
-Modified sections:
-- Platform and Technology Constraints, "Repository layout": the numbering rule per zone
-  folder. "Naming": boundary views are named `vw_<source zone>_<dataset>`.
+- III. Data Quality Through Expectations: the `DROP ROW` action line now refers to both
+  ways Principle IV allows it.
+- IV. Quarantine, Never Silently Discard: `ON VIOLATION DROP ROW` without quarantine is
+  allowed for a conformed silver table's own rule, when the feature's plan names the rule
+  and says why its rows need not be kept. The rule's failed count is the measure of what
+  was dropped, and the rule is listed as a reconciliation exclusion in
+  `doc/pipeline-reference.md`. Owner decision, 2026-10-18: "Not all constraints need to go
+  to the quarantine table. I want to show the idea behind each of the cases." Feature 005,
+  `tb_acesso.check_endereco_ip_acesso`, is the first use.
 
 Added sections: none
 Removed sections: none
 
 Dependent templates: not modified by this command; they read the constitution at runtime.
 
-Follow-up TODOs (existing files that do not comply; nothing was moved):
-- `src/pipeline/01_bronze/dados_api.sql`, `dados_files.sql`, `dados_database.sql` →
-  rename to `01_dados_api.sql`, `02_dados_files.sql`, `03_dados_database.sql`. Renaming
-  changes no dataset (the pipeline globs `src/pipeline/**`), but every reference must
-  follow: `doc/pipeline-reference.md`, `doc/architecture.md`, `doc/README.md`,
-  `doc/getting-started.md` if it names them, and `specs/003-bronze-ingestion/`
-  (plan, contract, tasks), which may be left as a historical record.
-- Feature 004 (`specs/004-api-quarantine/`, in progress, nothing published yet):
-  `src/pipeline/02_silver/temp_tb_validacao_api.sql` must read a new boundary view
-  `vw_bronze_dados_api` (its own numbered file), lose the `registro_nao_conforme` rule,
-  and be renumbered. The files become `01_vw_bronze_dados_api.sql`,
-  `02_temp_tb_validacao_api.sql` and `03_tb_quarentena.sql`. Update spec (FR-004 and the
-  rules table, US2, edge cases, assumptions), plan (Constitution Check against v1.6.0),
-  research (Decision 1 reverses: the view is now required; Decision 3 loses rule 4),
-  data model, contract, quickstart (queries without `source_file_name`/`_rescued_data`
-  and without rule 4) and tasks.
-- In the workspace, the private table of feature 004 has a backing table with no rows,
-  created by the update of 14:40 UTC with the old column set. Its schema changes, so the
-  next update may need a refresh of that table only, which needs the owner's approval.
-- Streaming-only bronze and silver: feature 004 already complies (one streaming temporary
-  view, two streaming tables). `doc/pipeline-reference.md` still describes the earlier
-  pipeline's silver; any silver dataset rebuilt from it must be streaming, so a
-  materialized view there must be redesigned or moved to gold.
+Follow-up TODOs:
+- Feature 005 (`specs/005-silver-tb-acesso/`): its plan must name
+  `check_endereco_ip_acesso` as a drop-without-quarantine rule and give the reason, and
+  `doc/pipeline-reference.md` must list it as a reconciliation exclusion of the API source.
+- Feature 004 is not affected: its rules only measure, and its rejected rows go to
+  quarantine.
 - No deferred placeholders.
 -->
 
@@ -161,7 +125,8 @@ by the pipeline.
   state why in its plan.
 - Each expectation MUST choose its action deliberately:
   - **Warn** (no `ON VIOLATION`): measure a rule without removing rows.
-  - **`ON VIOLATION DROP ROW`**: remove rows, subject to Principle IV.
+  - **`ON VIOLATION DROP ROW`**: remove rows, either routed to quarantine by the same
+    predicate or dropped as a declared exclusion, both under Principle IV.
   - **`ON VIOLATION FAIL UPDATE`**: stop the update. Reserved for invariants whose
     violation would make downstream data wrong, such as a null or duplicated key in a gold
     dimension.
@@ -199,9 +164,16 @@ replayed.
   `origem` and the validation table's `data_carga`. It adds its own load time as
   `data_carga_quarentena`. All the evidence of a data issue is then in one row, without a
   join back to the private validation table.
-- `ON VIOLATION DROP ROW` is permitted only when the dropped rows are also routed to a
-  quarantine table by the same predicate. Dropping a row that exists nowhere but bronze is
-  a violation.
+- `ON VIOLATION DROP ROW` is permitted in two cases:
+  - **Routed**: the dropped rows are also routed to a quarantine table by the same
+    predicate.
+  - **Declared exclusion**: on a conformed silver table's own rule, when the feature's
+    plan names the rule and states why its rows need not be kept. The rule's failed count
+    is the record of what was dropped. The rule MUST be listed as a reconciliation
+    exclusion in `doc/pipeline-reference.md`. Rejection rules of a validation table never
+    use this case: they always route to quarantine.
+
+  Any other drop of a row that exists nowhere but bronze is a violation.
 - For each source, rows in bronze MUST equal rows conformed plus rows quarantined, apart
   from exclusions documented in `doc/pipeline-reference.md`.
 
@@ -439,4 +411,4 @@ this repository.
   `databricks-pipelines` skill gives syntax and patterns. Both inform implementation;
   neither overrides this document.
 
-**Version**: 1.6.0 | **Ratified**: 2026-10-10 | **Last Amended**: 2026-10-18
+**Version**: 1.7.0 | **Ratified**: 2026-10-10 | **Last Amended**: 2026-10-18

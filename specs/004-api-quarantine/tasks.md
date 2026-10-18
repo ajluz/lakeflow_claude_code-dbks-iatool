@@ -216,8 +216,8 @@ Implementation notes, which are preserved below.
 **Purpose**: one upload, one dry run and one real update for all silver files and the bronze renames
 
 - [X] T013 Upload with `databricks workspace import-dir src/pipeline /Workspace/Users/arthur.luz@dataslight.com.br/lakeflow_dev/src/pipeline --overwrite --profile databricks-free`. Then delete the unnumbered files left in the workspace with `databricks workspace delete` on each path: `.../01_bronze/dados_api.sql`, `.../01_bronze/dados_files.sql`, `.../01_bronze/dados_database.sql`, `.../02_silver/temp_tb_validacao_api.sql`. Confirm with `databricks workspace list` that `01_bronze` holds exactly `01_dados_api.sql`, `02_dados_files.sql`, `03_dados_database.sql`, and `02_silver` holds exactly `01_vw_bronze_dados_api.sql`, `02_temp_tb_validacao_api.sql`, `03_tb_quarentena.sql`, all as `FILE`
-- [ ] T014 Following the quota conventions, run a dry run with `databricks pipelines start-update 8d51ac7a-02be-4ce2-8afd-f4f263e448dd --validate-only --profile databricks-free` and poll it. It must be `COMPLETED`, with events defining `vw_bronze_dados_api`, `temp_tb_validacao_api` and `tb_quarentena`, and each bronze table defined once. On the lateral-alias error, apply the allowed fallback in `src/pipeline/02_silver/02_temp_tb_validacao_api.sql`, re-upload and repeat. Report any other error
-- [ ] T015 Following the quota conventions, run the real update with `databricks pipelines start-update 8d51ac7a-02be-4ce2-8afd-f4f263e448dd --profile databricks-free`, poll it to a terminal state and record its `update_id`. If it fails because the empty backing table of `temp_tb_validacao_api` has the old schema, **stop and ask the owner** to approve a refresh of that table only (`--json '{"full_refresh_selection": ["workspace.silver.temp_tb_validacao_api"]}'`). It holds no rows (research.md Decision 8). On `COMPLETED`, confirm that `SHOW TABLES IN workspace.silver` lists `tb_quarentena` and not `temp_tb_validacao_api`
+- [X] T014 Following the quota conventions, run a dry run with `databricks pipelines start-update 8d51ac7a-02be-4ce2-8afd-f4f263e448dd --validate-only --profile databricks-free` and poll it. It must be `COMPLETED`, with events defining `vw_bronze_dados_api`, `temp_tb_validacao_api` and `tb_quarentena`, and each bronze table defined once. On the lateral-alias error, apply the allowed fallback in `src/pipeline/02_silver/02_temp_tb_validacao_api.sql`, re-upload and repeat. Report any other error
+- [X] T015 Following the quota conventions, run the real update with `databricks pipelines start-update 8d51ac7a-02be-4ce2-8afd-f4f263e448dd --profile databricks-free`, poll it to a terminal state and record its `update_id`. If it fails because the empty backing table of `temp_tb_validacao_api` has the old schema, **stop and ask the owner** to approve a refresh of that table only (`--json '{"full_refresh_selection": ["workspace.silver.temp_tb_validacao_api"]}'`). It holds no rows (research.md Decision 8). On `COMPLETED`, confirm that `SHOW TABLES IN workspace.silver` lists `tb_quarentena` and not `temp_tb_validacao_api`
 
 **Checkpoint**: all silver datasets are created and filled
 
@@ -225,7 +225,7 @@ Implementation notes, which are preserved below.
 
 ## Phase 6: User Story 1 - validation
 
-- [ ] T016 [US1] With the first event log query of quickstart.md step 4 for the update of T015, confirm that the flow of `temp_tb_validacao_api` wrote exactly `total` rows (T006), so no event was dropped (FR-002, SC-001). Record the number
+- [X] T016 [US1] With the first event log query of quickstart.md step 4 for the update of T015, confirm that the flow of `temp_tb_validacao_api` wrote exactly `total` rows (T006), so no event was dropped (FR-002, SC-001). Record the number
 
 ---
 
@@ -237,7 +237,7 @@ Implementation notes, which are preserved below.
 
 ### Implementation for User Story 2
 
-- [ ] T017 [US2] Run the expectations query of quickstart.md step 4 for the update of T015. Confirm:
+- [X] T017 [US2] Run the expectations query of quickstart.md step 4 for the update of T015. Confirm:
   - dataset `temp_tb_validacao_api` lists exactly `curso_invalido`, `valor_invalido` and `forma_pagamento_invalido`;
   - each rule's `falhou` equals its count from T006;
   - `passou + falhou = total` for each rule.
@@ -255,14 +255,14 @@ Implementation notes, which are preserved below.
 
 ### Implementation for User Story 3 (validation)
 
-- [ ] T019 [P] [US3] Run the two count queries of quickstart.md step 3 on `workspace.silver.tb_quarentena`. Confirm that the total equals `invalidos` (T006), and that each rule's count from `explode(regras_violadas)` equals its count from T006 and its `falhou` from T017. Record the counts
-- [ ] T020 [P] [US3] Run the remaining queries of quickstart.md step 3:
+- [X] T019 [P] [US3] Run the two count queries of quickstart.md step 3 on `workspace.silver.tb_quarentena`. Confirm that the total equals `invalidos` (T006), and that each rule's count from `explode(regras_violadas)` equals its count from T006 and its `falhou` from T017. Record the counts
+- [X] T020 [P] [US3] Run the remaining queries of quickstart.md step 3:
   - the checks return `origem_errada = 0`, `sem_data_carga = 0`, `sem_data_carga_quarentena = 0`, `flag_falsa = 0` and `sem_regra = 0`;
   - the `information_schema.columns` query lists exactly the ten columns of quickstart.md step 3, with no `source_file_name` or `_rescued_data`;
   - both `EXCEPT ALL` sides return 0 (FR-010, SC-005).
 
   Also confirm `SHOW TBLPROPERTIES workspace.silver.tb_quarentena ('quality')` is `silver`.
-- [ ] T021 [P] [US3] Run the expectations query of quickstart.md step 4 for the update of T015. Confirm that dataset `tb_quarentena` lists `regra_violada_registrada` with `falhou = 0` and `passou = invalidos`
+- [X] T021 [P] [US3] Run the expectations query of quickstart.md step 4 for the update of T015. Confirm that dataset `tb_quarentena` lists `regra_violada_registrada` with `falhou = 0` and `passou = invalidos`
 
 **Checkpoint**: invalid events are preserved with their reasons; nothing is silently discarded
 
@@ -276,8 +276,8 @@ Implementation notes, which are preserved below.
 
 ### Implementation for User Story 4
 
-- [ ] T022 [US4] Reconcile (FR-013, SC-004). Compute valid = validation rows (T016) − quarantine rows (T019). Confirm that valid = `total` − `invalidos`, and that bronze `total` = valid + quarantined with a difference of 0. Record the three numbers
-- [ ] T023 [US4] Prove incremental behavior (FR-015, SC-007). Following the quota conventions, run another update with no new landing data and poll it to `COMPLETED`. With the first event log query of quickstart.md step 4 for this update, confirm that the `temp_tb_validacao_api` and `tb_quarentena` flows each wrote 0 rows, and that the quarantine count is unchanged
+- [X] T022 [US4] Reconcile (FR-013, SC-004). Compute valid = validation rows (T016) − quarantine rows (T019). Confirm that valid = `total` − `invalidos`, and that bronze `total` = valid + quarantined with a difference of 0. Record the three numbers
+- [X] T023 [US4] Prove incremental behavior (FR-015, SC-007). Following the quota conventions, run another update with no new landing data and poll it to `COMPLETED`. With the first event log query of quickstart.md step 4 for this update, confirm that the `temp_tb_validacao_api` and `tb_quarentena` flows each wrote 0 rows, and that the quarantine count is unchanged
 
 **Checkpoint**: the split is exact and incremental; the valid side is ready for the conformed tables of later features
 
@@ -315,7 +315,7 @@ Implementation notes, which are preserved below.
   - Rename any bronze file links to the numbered names.
 - [X] T026 [P] In `doc/README.md`, update the repository layout so that `src/pipeline/01_bronze/` lists `01_dados_api.sql`, `02_dados_files.sql` and `03_dados_database.sql`, and `src/pipeline/02_silver/` lists its three files with a one-line description each. Update the "Pipeline datasets" row of the "At a glance" table to what exists now: 3 bronze tables, 1 silver view, 1 private silver table and 1 silver table
 - [X] T027 [P] In `doc/known-issues.md`, delete the table row for `04_tb_quarentena.sql:4` under `## Catalog name mismatch`, and the paragraph beginning "The quarantine table is the one that matters for the pipeline". Keep the other rows
-- [ ] T028 Final review against contracts/silver-validation-quarantine.md:
+- [X] T028 Final review against contracts/silver-validation-quarantine.md:
   - the files in `src/pipeline/01_bronze/` and `src/pipeline/02_silver/` match their shapes and the numbering;
   - the workspace copies are identical to the repository, and no unnumbered file remains in the workspace;
   - `git status` shows changes only in `src/pipeline/`, `doc/`, `specs/004-api-quarantine/` and `.specify/memory/constitution.md`;
@@ -561,3 +561,52 @@ Lesson for later features: a validate-only run creates no tables, and a failed f
 can still leave a backing table with an early schema. When a dataset's columns change
 before it has ever completed, refresh it on the next run instead of hoping a normal
 update reconciles the schema.
+
+**Refresh `15f6ec69-b6f1-4c27-ae05-387a53863202`** (approved selection: the two silver
+tables only): **COMPLETED**. It stands in for T014 and T015. The owner's update
+`4a36cc07` had already validated and created the datasets in place of a separate dry run.
+
+**T016**: `temp_tb_validacao_api` wrote **2,550,955** rows, equal to `total` (T006). The
+bronze flows wrote nothing, because they were not in the refresh selection.
+
+**T017**, expectations of `temp_tb_validacao_api`:
+
+| rule | passed | failed | T006 |
+|---|---|---|---|
+| `curso_invalido` | 2,541,715 | 9,240 | 9,240 |
+| `valor_invalido` | 2,541,715 | 9,240 | 9,240 |
+| `forma_pagamento_invalido` | 2,544,021 | 6,934 | 6,934 |
+
+For each rule, passed + failed = 2,550,955. No `ON VIOLATION` in any silver file.
+
+**T019**: `tb_quarentena` has 9,240 rows, equal to `invalidos`. Per rule, from
+`regras_violadas`: `curso_invalido` 9,240, `valor_invalido` 9,240,
+`forma_pagamento_invalido` 6,934. These equal T006 and the `falhou` values of T017, so the
+`CONSTRAINT` text and the `CASE` lines agree.
+
+**T020**: `origem_errada`, `sem_data_carga`, `sem_data_carga_quarentena`, `flag_falsa` and
+`sem_regra` are all 0. Columns, in order: `processing_time, access_date, access_point,
+ip_address, payload, regras_violadas, fl_registro_invalido, origem, data_carga,
+data_carga_quarentena`. There is no `source_file_name` or `_rescued_data`. Both
+`EXCEPT ALL` sides are 0, so quarantine equals the invalid bronze events field for field.
+`quality` = `silver`. `SHOW TABLES IN workspace.silver` lists only `tb_quarentena`; the
+validation table is private.
+
+**T021**: `regra_violada_registrada`: passed 9,240, failed 0.
+
+**T022**: valid = 2,550,955 − 9,240 = **2,541,715**. This equals the passed count of
+`curso_invalido` and `valor_invalido`, whose failures are exactly the invalid set. Bronze
+2,550,955 = valid 2,541,715 + quarantined 9,240, with a difference of 0.
+
+**T023**: update `95dabc19-68fe-47a2-9be4-f00d3418ee08` (no new landing data)
+**COMPLETED**. The event log has no `num_output_rows` for any flow, so 0 rows were
+written. `tb_quarentena` still has 9,240 rows. Incremental behavior is confirmed.
+
+**T028**: the six workspace files are identical to the repository, with no unnumbered file
+left. `explorations/setup/03_pipeline_dev.json` is unchanged. The owner committed the work
+(commits `cb92128`, `29b90dc`, `60fda13`). The constitution was committed with its Sync
+Impact Report still in the file.
+
+**Open**: T018. The owner needs to look at the Data quality tab of
+`temp_tb_validacao_api` in the pipeline UI. The event log already shows the three
+expectations with their metrics (T017).

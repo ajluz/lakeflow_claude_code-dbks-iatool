@@ -1,35 +1,43 @@
 <!--
 SYNC IMPACT REPORT (scratch material for review; remove before committing)
 
-Version change: 1.8.0 → 1.9.0
-Bump rationale: MINOR. A rule is added to Principle V: every append flow reads a temporary
-view that holds its whole query. The v1.8.0 workflow rule that features add only datasets
-the diagram shows gains one exception, for these flow views. Nothing is removed.
+Version change: 1.9.0 → 1.10.0
+Bump rationale: MINOR. Guidance is materially expanded. Platform and Technology Constraints
+gains an "AI tools" constraint that states how Databricks Assistant, Genie, AI Functions
+and Agent Bricks are used in this project. Development Workflow and Quality Gates gains a
+rule that AI output is a draft, reviewed like any other change. No principle changes.
+Owner, 2026-10-25: "within the constitution we considering the databricks IA tools for
+the development?" followed by "please, add it on the constitution".
 
-Modified principles (titles unchanged):
-- V. Dataset Types and Flows: every `CREATE FLOW ... AS INSERT INTO` MUST read
-  `STREAM(<view>)` with `SELECT *`. Its temporary view, named
-  `vw_<zone>_<target>_<source>` (for example `vw_silver_tb_venda_api`), holds the
-  filtering, renaming, casting and keys. Owner, 2026-10-18: "It will become much simpler
-  to read the pipeline."
+Modified principles: none
 
 Modified sections:
-- Development Workflow and Quality Gates: the target-graph rule allows a flow view that
-  `doc/lakeflow_architecture.png` does not draw. The view must be named by the convention
-  above and listed in the plan.
+- Platform and Technology Constraints: new "AI tools" constraint.
+  - Databricks Assistant MAY write, explain and debug pipeline SQL; its output is reviewed
+    against the constitution before commit.
+  - Genie is read-only and a Genie Agent for this project is defined over gold only.
+  - AI Functions MUST NOT be used in bronze, silver or gold datasets (non-deterministic
+    results break hash keys and reconciliation); they are permitted under explorations/.
+  - Agent Bricks are consumers of gold, never part of the pipeline.
+  - Every AI tool is optional: the pipeline runs and reconciles without any of them.
+- Development Workflow and Quality Gates: AI-generated code and answers are drafts, held
+  to the Core Principles, reviewed by a person before commit, and never a substitute for
+  the approvals the section requires (full refresh, table drop).
 
 Added sections: none
 Removed sections: none
 
 Dependent templates: not modified by this command; they read the constitution at runtime.
 
+Affected files: none. No file under src/ or explorations/ uses an AI Function, Genie or
+Agent Bricks today, so no migration is needed.
+
 Follow-up TODOs:
-- Feature 006: `tb_usuario`'s two append flows get views:
-  `06_vw_silver_tb_usuario_api.sql` and `07_vw_silver_tb_usuario_files.sql`, with
-  `08_tb_usuario.sql` holding the target and two `SELECT * FROM STREAM(<view>)` flows.
-  This needs a refresh of `tb_usuario` (owner's approval), together with the pending
-  refresh of `tb_acesso`.
-- Later features: `tb_venda` follows the same pattern, as the diagram already shows.
+- The AI Functions rule is the strict option. A feature that wants ai_classify or
+  ai_extract inside a silver dataset comes as an amendment naming the dataset and the
+  function.
+- Feature 006 follow-ups from v1.9.0 (flow views for tb_usuario, pending refresh of
+  tb_usuario and tb_acesso) are unchanged by this amendment.
 - No deferred placeholders.
 -->
 
@@ -374,6 +382,35 @@ loss with an explicit "unknown".
 - **Data**: all data is synthetic. Real personal data MUST NOT be loaded into this project.
 - **CLI**: Databricks CLI commands MUST pass an explicit `--profile`. A profile MUST NOT be
   selected on the user's behalf.
+- **AI tools**: Databricks AI tools are part of the development toolkit, within the limits
+  below. Every one of them is optional: the pipeline MUST validate, run and reconcile
+  without any of them, so the project stays runnable on Databricks Free Edition and in a
+  workspace where a tool is disabled. All data is synthetic, so nothing in this project is
+  withheld from these tools.
+  - **Databricks Assistant** MAY be used to write, explain and debug pipeline SQL, and to
+    diagnose a failed update. Its output is a draft: a person reviews it against this
+    constitution before it is committed. Generated code that uses legacy syntax
+    (Principle II), a bare `WHERE` in place of an expectation (Principle III), or a hash
+    key expression different from the one already in use (Principle VI) MUST be rewritten
+    before use.
+  - **Genie** MAY be used to explore data and to answer questions during development,
+    reconciliation and demonstrations. It is read-only: it MUST NOT create, alter or write
+    datasets. A Genie Agent built for this project MUST be defined over `workspace.gold`
+    only; bronze and silver are not exposed to it. When a Genie answer is used as evidence
+    for a quality gate, the SQL that Genie generated is the evidence, not the question.
+  - **AI Functions** (`ai_query`, `ai_classify`, `ai_extract` and the rest of the `ai_*`
+    family) MUST NOT be used in bronze, silver or gold datasets. A model call is not
+    deterministic: a reload could produce different rows, a hash key over its result would
+    drift (Principle VI), and bronze-to-silver reconciliation could no longer be explained
+    (Principles I and IV). Principle III already excludes them from expectation
+    conditions. They MAY be used under `explorations/`, for synthetic data generation and
+    exploration. A pipeline use that needs one MUST be raised as an amendment naming the
+    dataset and the function.
+  - **Agent Bricks** (Knowledge Assistant, Supervisor Agent, Information Extraction and
+    the other Agent Bricks types) are consumers of gold, like a dashboard. They MUST NOT
+    feed any dataset, and the pipeline MUST NOT depend on one. An agent built for this
+    project reads `workspace.gold` only and is named in `doc/architecture.md` as a
+    consumer.
 
 ## Development Workflow and Quality Gates
 
@@ -387,6 +424,10 @@ loss with an explicit "unknown".
   reference file for each feature in use MUST be consulted. When the skill and this
   constitution disagree, the constitution prevails and the disagreement is raised as an
   amendment.
+- Code and answers produced by Databricks Assistant, Genie, or any other AI tool are
+  drafts. They are held to the Core Principles like any other change, reviewed by a person
+  before they are committed, and never substitute for the approvals this section
+  requires: a full refresh and a table drop remain decisions of the user.
 - Every feature plan MUST include a Constitution Check covering every Core Principle.
   Each deviation MUST be recorded with its justification and the simpler alternative that
   was rejected.
@@ -426,4 +467,4 @@ this repository.
   `databricks-pipelines` skill gives syntax and patterns. Both inform implementation;
   neither overrides this document.
 
-**Version**: 1.9.0 | **Ratified**: 2026-10-10 | **Last Amended**: 2026-10-18
+**Version**: 1.10.0 | **Ratified**: 2026-10-10 | **Last Amended**: 2026-10-25

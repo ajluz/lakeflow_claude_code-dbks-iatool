@@ -136,7 +136,7 @@ run for this feature.
 
 ## Phase 8: Polish
 
-- [ ] T016 Following the quota conventions, run an update with no new data. Confirm that both `tb_usuario` flows write 0 rows and the counts are unchanged
+- [X] T016 Following the quota conventions, run an update with no new data. Confirm that both `tb_usuario` flows write 0 rows and the counts are unchanged
 - [X] T017 [P] In `doc/pipeline-reference.md`:
   - rewrite `### tb_usuario` as built: two `AUTO CDC` SCD type 1 flows, the 10 columns per source, both keys' business columns, the three expectations, and the declared exclusion with its count;
   - add `vw_bronze_dados_files`, `vw_silver_vendas_arquivo`, `vw_silver_usuario_api` and `vw_silver_usuario_arquivo` to `### Temporary views`, replacing the earlier `vw_bronze_dados_files` row;
@@ -145,7 +145,7 @@ run for this feature.
   - add nodes for the four views and route the files path `B2 --> V2 --> <vw_silver_vendas_arquivo> --> <vw_silver_usuario_arquivo> --> S3`, and the API path `V6 --> <vw_silver_usuario_api> --> S3`, replacing `T1 --> S3` and the old `B2 --> V2 --> S3`;
   - in the features table, point "Combining sources with `UNION ALL`" to nothing (remove it) and add "Two `AUTO CDC` flows (SCD type 1) into one table, as deduplication" → `10_tb_usuario.sql`.
 - [X] T019 [P] In `doc/README.md`, list `06_`–`10_` in the `02_silver/` layout, and update the dataset count: in silver, 6 streaming views, 1 private streaming table and 3 streaming tables
-- [ ] T020 Final review:
+- [X] T020 Final review:
   - the workspace copies are identical to the repository;
   - `git status` shows changes only in `src/pipeline/02_silver/`, `doc/` and `specs/006-silver-tb-usuario/`;
   - features 004 and 005's files are unchanged.
@@ -279,3 +279,38 @@ Results equal the pre-restructure numbers:
   minus those whose access was also dropped for the address gives 14,862. The key
   expressions agree.
 - The flows still appear as `workspace.bronze.silver_tb_usuario_*_flow` (open finding).
+
+**T016** (on the restructured graph): update `0ea40874-d386-4be1-a6bc-06dd5e3c8dc4` (no
+new data) **COMPLETED**. No flow wrote rows. `tb_acesso` 2,516,192, `tb_usuario` 941,234
+and `tb_quarentena` 9,240 are unchanged.
+
+**T020**: the eight `02_silver` workspace files are identical to the repository, and no
+obsolete file remains. The earlier features' bronze files and the pipeline settings are
+unchanged.
+
+**AI tools (constitution v1.10.0, owner, 2026-10-25, about 18:50 UTC)**: the owner
+asked whether the constitution considered the Databricks AI tools for development. It did
+not: its only AI-adjacent references were to the `databricks-pipelines` skill, which is an
+editor skill, not a Databricks product. The owner asked for it to be added. The
+constitution was amended to v1.10.0 (Platform and Technology Constraints, "AI tools";
+Development Workflow and Quality Gates, AI output is a draft):
+- Databricks Assistant may write, explain and debug pipeline SQL; its output is reviewed
+  against the constitution before commit, with legacy syntax, bare `WHERE` filters and
+  divergent hash key expressions rewritten first;
+- Genie is read-only; a Genie Agent for this project is defined over `workspace.gold`
+  only, and when a Genie answer backs a quality gate its generated SQL is the evidence;
+- AI Functions (`ai_*`) are not used in bronze, silver or gold datasets, because a model
+  call is not deterministic (hash keys, reconciliation); they are allowed under
+  `explorations/`, and a pipeline use needs an amendment naming the dataset and function;
+- Agent Bricks are consumers of gold, like a dashboard, never part of the pipeline;
+- every tool is optional: the pipeline validates, runs and reconciles without any of
+  them, so Free Edition stays supported.
+
+No file in `src/` or `explorations/` uses an AI tool, so nothing in this feature changes.
+The strict AI Functions rule is the owner's call to relax, by an amendment naming the
+dataset, if a demonstration wants `ai_classify` or `ai_extract` inside silver.
+
+**Open (owner)**:
+- T015: the Data quality tab of `tb_usuario`.
+- The flow-name finding.
+- Commit the constitution v1.6.0–v1.10.0 amendments (remove the Sync Impact Report first).

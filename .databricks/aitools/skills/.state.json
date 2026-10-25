@@ -1,8 +1,8 @@
 {
   "schema_version": 2,
   "include_experimental": true,
-  "release": "v0.2.10",
-  "last_updated": "2026-10-10T15:45:51.26897-03:00",
+  "release": "v0.2.32",
+  "last_updated": "2026-10-25T15:34:36.735221-03:00",
   "skills": {
     "databricks-aibi-dashboards": "0.2.1",
     "databricks-core": "0.1.0",
@@ -42,6 +42,14 @@
     "spark-python-data-source": "experimental"
   },
   "scope": "project",
+  "plugins": {
+    "claude-code": {
+      "marketplace": "claude-plugins-official",
+      "plugin": "databricks",
+      "scope": "project",
+      "version": "0.2.32"
+    }
+  },
   "files": {
     "databricks-aibi-dashboards/SKILL.md": {
       "sha256": "c3698a388fda2dcea47fe5e683091db275cfd6fca72e78fa474384d228b77eab",

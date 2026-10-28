@@ -4,10 +4,10 @@ Every dataset of the pipeline, in dependency order. Tables carry a `quality`
 table property (`bronze`, `silver` or `gold`).
 
 The Bronze section, and in Silver the views `vw_bronze_dados_api` and
-`vw_bronze_dados_files`, the flow views `vw_silver_tb_usuario_api`,
-`vw_silver_tb_usuario_files`, `vw_silver_tb_venda_api` and `vw_silver_tb_venda_files`, and
-the sections `temp_tb_validacao_api`, `tb_quarentena`, `tb_acesso`, `tb_usuario` and
-`tb_venda`, describe the pipeline as it is built today, under [src/pipeline/](../src/pipeline/). The other Silver datasets and the Gold
+`vw_bronze_dados_files`, the course feed view `vw_bronze_tb_curso`, the flow views
+`vw_silver_tb_usuario_api`, `vw_silver_tb_usuario_files`, `vw_silver_tb_venda_api` and
+`vw_silver_tb_venda_files`, and the sections `temp_tb_validacao_api`, `tb_quarentena`,
+`tb_acesso`, `tb_usuario`, `tb_venda` and `tb_curso`, describe the pipeline as it is built today, under [src/pipeline/](../src/pipeline/). The other Silver datasets and the Gold
 section still describe the earlier pipeline, whose `code_tips/` folder is no longer
 in the repository; they will be replaced as those layers are rebuilt.
 
@@ -60,7 +60,7 @@ Exist only during a pipeline update and are not published to the catalog.
 | `vw_silver_tb_usuario_files` | [07](../src/pipeline/02_silver/07_vw_silver_tb_usuario_files.sql) | flow view: `vw_bronze_dados_files` in `tb_usuario`'s 10 columns, `usuario_uuid` included. As built |
 | `vw_silver_tb_venda_api` | [09](../src/pipeline/02_silver/09_vw_silver_tb_venda_api.sql) | flow view: valid API events with a payment, in `tb_venda`'s 13 columns, with the access, user and course keys written as in `tb_acesso`. As built |
 | `vw_silver_tb_venda_files` | [10](../src/pipeline/02_silver/10_vw_silver_tb_venda_files.sql) | flow view: `vw_bronze_dados_files` in `tb_venda`'s 13 columns, user key as in `tb_usuario`. As built |
-| `vw_bronze_tb_curso` | [10](../code_tips/02_silver/10_vw_bronze_tb_curso.sql) | `bronze.dados_database` plus `origem = 'DATABASE'` |
+| `vw_bronze_tb_curso` | [12](../src/pipeline/02_silver/12_vw_bronze_tb_curso.sql) | the course feed's boundary view (constitution v1.11.0, Principle I): `STREAM(bronze.dados_database)` minus `source_file_name`, `_rescued_data`, with `valor_curso` as `DECIMAL(9,2)` and `origem = 'DATABASE'`, `data_carga` added; no filter. Read by `tb_curso` and, later, `dim_curso`. As built |
 
 ### temp_tb_validacao_api
 
@@ -277,19 +277,47 @@ differs by a cent or two from `payload.info_pagamento.valor` in 78,578 API sales
 
 ### tb_curso
 
-[11_tb_curso.sql](../code_tips/02_silver/11_tb_curso.sql) — streaming table,
-target of an `AUTO CDC` flow (`silver_tb_curso_flow`) stored as **SCD type 1**.
+[13_tb_curso.sql](../src/pipeline/02_silver/13_tb_curso.sql) — streaming table
+`workspace.silver.tb_curso`, target of the `AUTO CDC` flow `silver_tb_curso_flow`, stored
+as **SCD type 1**. As built. One row per course: the values of its latest change; a
+deleted course has no row.
 
 | Setting | Value |
 |---|---|
-| Source | `vw_bronze_tb_curso` |
-| Key | `curso_uuid` |
+| Source | `STREAM(vw_bronze_tb_curso)` |
+| Key | `curso_uuid`, the identifier delivered by the source (no hash key: Principle VI exception) |
 | Sequence | `timestamp_change` |
-| Delete condition | `change_type = "delete"` |
-| Columns excluded | `timestamp_change`, `change_type`, `_rescued_data`, `processing_time`, `source_file_name` |
+| Delete condition | `change_type = 'delete'`, placed before `SEQUENCE BY` |
+| Columns excluded | `COLUMNS * EXCEPT (change_type, timestamp_change, processing_time)`; the view already excludes `source_file_name` and `_rescued_data` |
 
-Resulting columns: `curso_uuid`, `nome_curso`, `nivel_curso`, `valor_curso`,
-`origem`. The table always holds the latest version of each course.
+| Column | Type | From |
+|---|---|---|
+| `curso_uuid` | STRING | as delivered; equals `md5(nome_curso)`, the value sales and accesses carry |
+| `nome_curso` | STRING | as delivered |
+| `nivel_curso` | STRING | as delivered |
+| `valor_curso` | DECIMAL(9,2) | `CAST(valor_curso AS DECIMAL(9,2))` in the view |
+| `origem` | STRING | `'DATABASE'` |
+| `data_carga` | TIMESTAMP | load time of the change that last set the row |
+
+| Expectation | Rule | On violation |
+|---|---|---|
+| `check_curso_uuid` | `curso_uuid IS NOT NULL` | record only |
+| `check_nome_curso` | `nome_curso IS NOT NULL` | record only |
+| `check_valor_curso` | `valor_curso IS NOT NULL AND valor_curso > 0` | record only |
+
+On 2026-10-28 the feed held the three inserts, and the table holds three rows:
+`beginner` 247.00, `intermediate` 997.00, `advanced` 2497.00. Every rule passed 3, failed
+0. Every `curso_uuid` in `tb_venda` and `tb_acesso` has a row.
+
+**Reconciliation**: rows = distinct courses whose latest change is not a deletion.
+
+**Updates and deletions** are shown at the talk, not run during implementation: the
+generator's `update row` sets the beginner course to 147.00 (still 3 rows), and
+`delete row` removes it (2 rows). After the deletion, that course's sales and accesses no
+longer join `tb_curso`; `dim_curso` keeps its history.
+
+A consumer that reads `tb_curso` as a stream needs `WITH (SKIPCHANGECOMMITS)`, because
+the table is updated and deleted in place.
 
 ## Gold
 

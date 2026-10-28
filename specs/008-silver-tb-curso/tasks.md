@@ -47,7 +47,7 @@ run the matching step of quickstart.md against the workspace.
 
 ## Phase 1: Setup
 
-- [ ] T001 Confirm the starting state, changing nothing:
+- [X] T001 Confirm the starting state, changing nothing:
   - `databricks current-user me --profile databricks-free` succeeds (if the refresh token
     is invalid, **stop and ask the owner** to run `databricks auth login --profile databricks-free`);
   - `.specify/memory/constitution.md` shows version 1.11.0 with the exception "the course
@@ -60,7 +60,7 @@ run the matching step of quickstart.md against the workspace.
 
 ## Phase 2: Foundational
 
-- [ ] T002 Run quickstart.md step 1 and record the result in the Implementation notes. Expected: one change type, `insert`, with 3 rows, 3 courses and `chave_diferente` = 0. If any `update` or `delete` row exists, **stop and ask the owner**: the talk's demo would no longer start from the initial catalog
+- [X] T002 Run quickstart.md step 1 and record the result in the Implementation notes. Expected: one change type, `insert`, with 3 rows, 3 courses and `chave_diferente` = 0. If any `update` or `delete` row exists, **stop and ask the owner**: the talk's demo would no longer start from the initial catalog
 
 ---
 
@@ -73,8 +73,8 @@ run the matching step of quickstart.md against the workspace.
 `linhas` = `cursos` = 3, the six columns of the data model, and every sale and access
 joins the catalog.
 
-- [ ] T003 [P] [US1] Create `src/pipeline/02_silver/12_vw_bronze_tb_curso.sql` exactly as in the contract: `CREATE TEMPORARY VIEW vw_bronze_tb_curso` selecting `* EXCEPT (source_file_name, _rescued_data, valor_curso)`, `CAST(valor_curso AS DECIMAL(9,2)) AS valor_curso`, `'DATABASE' AS origem` and `current_timestamp() AS data_carga` `FROM STREAM(workspace.bronze.dados_database)`, with no filter. The header comment in Portuguese says this is the course feed's boundary view, that it excludes the two lineage columns, and that it converts the price and adds `origem` and `data_carga` because the `AUTO CDC` flows of `tb_curso` and, later, `dim_curso` cannot compute columns (constitution v1.11.0, Principle I)
-- [ ] T004 [US1] Create `src/pipeline/02_silver/13_tb_curso.sql` exactly as in the contract:
+- [X] T003 [P] [US1] Create `src/pipeline/02_silver/12_vw_bronze_tb_curso.sql` exactly as in the contract: `CREATE TEMPORARY VIEW vw_bronze_tb_curso` selecting `* EXCEPT (source_file_name, _rescued_data, valor_curso)`, `CAST(valor_curso AS DECIMAL(9,2)) AS valor_curso`, `'DATABASE' AS origem` and `current_timestamp() AS data_carga` `FROM STREAM(workspace.bronze.dados_database)`, with no filter. The header comment in Portuguese says this is the course feed's boundary view, that it excludes the two lineage columns, and that it converts the price and adds `origem` and `data_carga` because the `AUTO CDC` flows of `tb_curso` and, later, `dim_curso` cannot compute columns (constitution v1.11.0, Principle I)
+- [X] T004 [US1] Create `src/pipeline/02_silver/13_tb_curso.sql` exactly as in the contract:
   - the target `workspace.silver.tb_curso` with `check_curso_uuid` (`curso_uuid IS NOT NULL`), `check_nome_curso` (`nome_curso IS NOT NULL`) and `check_valor_curso` (`valor_curso IS NOT NULL AND valor_curso > 0`), all warn, plus `TBLPROPERTIES ("quality" = "silver")`;
   - `CREATE FLOW silver_tb_curso_flow AS AUTO CDC INTO workspace.silver.tb_curso FROM STREAM(vw_bronze_tb_curso) KEYS (curso_uuid) APPLY AS DELETE WHEN change_type = 'delete' SEQUENCE BY timestamp_change COLUMNS * EXCEPT (change_type, timestamp_change, processing_time) STORED AS SCD TYPE 1`.
 
@@ -89,7 +89,7 @@ joins the catalog.
 **Independent Test**: at the talk (T019). During implementation, the definition is
 reviewed only.
 
-- [ ] T005 [US2] Review `src/pipeline/02_silver/13_tb_curso.sql` for the update behavior: `KEYS (curso_uuid)`, `SEQUENCE BY timestamp_change`, `STORED AS SCD TYPE 1`, no `IGNORE NULL UPDATES`, no `TRACK HISTORY`
+- [X] T005 [US2] Review `src/pipeline/02_silver/13_tb_curso.sql` for the update behavior: `KEYS (curso_uuid)`, `SEQUENCE BY timestamp_change`, `STORED AS SCD TYPE 1`, no `IGNORE NULL UPDATES`, no `TRACK HISTORY`
 
 ---
 
@@ -100,17 +100,17 @@ reviewed only.
 **Independent Test**: at the talk (T020). During implementation, the definition is
 reviewed only.
 
-- [ ] T006 [US3] Review `src/pipeline/02_silver/13_tb_curso.sql` for the deletion behavior: `APPLY AS DELETE WHEN change_type = 'delete'` appears **before** `SEQUENCE BY` (Principle V; the parser fails otherwise), and the condition compares the lower-case value `'delete'` that the generator writes
+- [X] T006 [US3] Review `src/pipeline/02_silver/13_tb_curso.sql` for the deletion behavior: `APPLY AS DELETE WHEN change_type = 'delete'` appears **before** `SEQUENCE BY` (Principle V; the parser fails otherwise), and the condition compares the lower-case value `'delete'` that the generator writes
 
 ---
 
 ## Phase 6: Review and deploy (shared by all stories)
 
-- [ ] T007 Review the two files against contracts/silver-tb-curso.md:
+- [X] T007 Review the two files against contracts/silver-tb-curso.md:
   - the view changes no column other than `valor_curso` and adds only `origem` and `data_carga`;
   - no `APPLY CHANGES`, `LIVE`, `CREATE OR REPLACE`, `MERGE`, `md5`, `ON VIOLATION`, `SCD TYPE 2`, `TRACK HISTORY`, `PARTITIONED`, `CLUSTER` or `ai_`;
   - no read of `workspace.bronze` outside `12_vw_bronze_tb_curso.sql`.
-- [ ] T008 Upload with `databricks workspace import-dir src/pipeline /Workspace/Users/arthur.luz@dataslight.com.br/lakeflow_dev/src/pipeline --overwrite --profile databricks-free`. Confirm that `02_silver/` lists thirteen `FILE`s, and that the two new copies are identical to the repository (export with `--format AUTO` to stdout and `cmp`)
+- [X] T008 Upload with `databricks workspace import-dir src/pipeline /Workspace/Users/arthur.luz@dataslight.com.br/lakeflow_dev/src/pipeline --overwrite --profile databricks-free`. Confirm that `02_silver/` lists thirteen `FILE`s, and that the two new copies are identical to the repository (export with `--format AUTO` to stdout and `cmp`)
 - [ ] T009 Following the quota conventions, dry run (`--validate-only`) to `COMPLETED`, with `vw_bronze_tb_curso`, `tb_curso` and `silver_tb_curso_flow` defined. Report any error to the owner
 - [ ] T010 Following the quota conventions, run the update to `COMPLETED` and record its `update_id` and who created each update in that window (event log `create_update` and `user_action`). If it fails after creating `tb_curso` and a fix changes its columns, **stop and ask the owner** to approve a refresh of `workspace.silver.tb_curso` only
 
@@ -186,3 +186,23 @@ One deploy, because each Free Edition update costs a quota cycle. MVP = US1 vali
 as the owner chose.
 
 ## Implementation notes
+
+### 2026-10-28
+
+**T001**: login valid (`arthur.luz@dataslight.com.br`); constitution v1.11.0 with the
+exception "the course feed's boundary view"; pipeline `IDLE` (last updates `8954b177` and
+`c52cd902`, both `COMPLETED`); `02_silver/` held `01_`–`11_`; `workspace.silver` held
+`tb_acesso`, `tb_quarentena`, `tb_usuario`, `tb_venda`, no `tb_curso`.
+
+**T002**: `bronze.dados_database` holds one change type, `insert`: 3 rows, 3 courses,
+`chave_diferente` 0. The landing folder `database/` holds one data file (plus Spark's
+marker files, which Auto Loader skips). No update or delete row: the catalog is in its
+initial state for the talk.
+
+**T003–T007**: two files written. `13_tb_curso.sql` has `KEYS (curso_uuid)`,
+`SEQUENCE BY timestamp_change` and `STORED AS SCD TYPE 1`, with no `IGNORE NULL UPDATES`
+or `TRACK HISTORY` (T005); the delete condition is on line 24, before `SEQUENCE BY` on line
+25 (T006). No forbidden token; only `12_` reads `workspace.bronze` (T007).
+
+**T008**: upload complete; `02_silver/` lists thirteen `FILE`s; both new copies are
+identical to the repository. Warehouse stopped.

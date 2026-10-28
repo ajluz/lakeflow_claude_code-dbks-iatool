@@ -56,8 +56,10 @@ expensive at the volumes the generators produce.
 
 - [05_tb_acesso.sql:1](../code_tips/02_silver/05_tb_acesso.sql#L1) uses
   `CREATE OR REPLACE` where every other table uses `CREATE OR REFRESH`.
-- `dim_curso` and `tb_curso` both read the bronze change feed. `tb_curso` is not
-  consumed by any gold table.
+- `dim_curso` and `tb_curso` both read the bronze change feed, through
+  `vw_bronze_tb_curso`. This is by design (constitution Principle I): `tb_curso` is SCD
+  type 1 and keeps no history, so `dim_curso` (SCD type 2) cannot read it. `tb_curso` is
+  the silver reference that sales and accesses join on `curso_uuid`.
 - Identity surrogate keys are declared on materialized views (`dim_usuario`,
   `dim_codigos`) and on an `AUTO CDC` target (`dim_curso`). Databricks documents
   that identity values on materialized views can be recomputed when the view is

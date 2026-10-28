@@ -60,11 +60,11 @@ expensive at the volumes the generators produce.
   `vw_bronze_tb_curso`. This is by design (constitution Principle I): `tb_curso` is SCD
   type 1 and keeps no history, so `dim_curso` (SCD type 2) cannot read it. `tb_curso` is
   the silver reference that sales and accesses join on `curso_uuid`.
-- Identity surrogate keys are declared on materialized views (`dim_usuario`,
-  `dim_codigos`) and on an `AUTO CDC` target (`dim_curso`). Databricks documents
-  that identity values on materialized views can be recomputed when the view is
-  refreshed, which would change keys under `fato_venda`; worth confirming
-  against the current documentation.
+- Identity surrogate keys are declared on a materialized view (`dim_codigos`) and on an
+  `AUTO CDC` target (`dim_curso`) in the earlier pipeline. Identity columns are not
+  supported on materialized views (`databricks-pipelines` skill), and keys that can be
+  reassigned would change under `fato_venda`. `dim_usuario` no longer has this issue: since
+  feature 009 its key is `xxhash64(usuario_uuid)`, which never changes for a user.
 - The bronze filter in [user_case.py](../explorations/user_case.py) mixes
   `AND` and `OR` without parentheses, so `WHERE 1=1 AND a OR b OR c` does not
   group the way the comments suggest once more conditions are uncommented.

@@ -4,9 +4,10 @@ Every dataset of the pipeline, in dependency order. Tables carry a `quality`
 table property (`bronze`, `silver` or `gold`).
 
 The Bronze section, and in Silver the views `vw_bronze_dados_api` and
-`vw_bronze_dados_files`, the flow views `vw_silver_tb_usuario_api` and
-`vw_silver_tb_usuario_files`, and the sections `temp_tb_validacao_api`, `tb_quarentena`,
-`tb_acesso` and `tb_usuario`, describe the pipeline as it is built today, under [src/pipeline/](../src/pipeline/). The other Silver datasets and the Gold
+`vw_bronze_dados_files`, the flow views `vw_silver_tb_usuario_api`,
+`vw_silver_tb_usuario_files`, `vw_silver_tb_venda_api` and `vw_silver_tb_venda_files`, and
+the sections `temp_tb_validacao_api`, `tb_quarentena`, `tb_acesso`, `tb_usuario` and
+`tb_venda`, describe the pipeline as it is built today, under [src/pipeline/](../src/pipeline/). The other Silver datasets and the Gold
 section still describe the earlier pipeline, whose `code_tips/` folder is no longer
 in the repository; they will be replaced as those layers are rebuilt.
 
@@ -57,8 +58,8 @@ Exist only during a pipeline update and are not published to the catalog.
 | `vw_bronze_dados_files` | [02](../src/pipeline/02_silver/02_vw_bronze_dados_files.sql) | `STREAM(bronze.dados_files)` minus `source_file_name`, `_rescued_data`; the bronze-to-silver boundary of the files source. As built |
 | `vw_silver_tb_usuario_api` | [06](../src/pipeline/02_silver/06_vw_silver_tb_usuario_api.sql) | flow view: valid API events with a user, in `tb_usuario`'s 10 columns, `usuario_uuid` included. As built |
 | `vw_silver_tb_usuario_files` | [07](../src/pipeline/02_silver/07_vw_silver_tb_usuario_files.sql) | flow view: `vw_bronze_dados_files` in `tb_usuario`'s 10 columns, `usuario_uuid` included. As built |
-| `vw_silver_tb_venda_api` | [07](../code_tips/02_silver/07_vw_silver_tb_venda_api.sql) | Sales shaped from valid API events that have a payment payload |
-| `vw_silver_tb_venda_files` | [08](../code_tips/02_silver/08_vw_silver_tb_venda_files.sql) | Sales shaped from partner files |
+| `vw_silver_tb_venda_api` | [09](../src/pipeline/02_silver/09_vw_silver_tb_venda_api.sql) | flow view: valid API events with a payment, in `tb_venda`'s 13 columns, with the access, user and course keys written as in `tb_acesso`. As built |
+| `vw_silver_tb_venda_files` | [10](../src/pipeline/02_silver/10_vw_silver_tb_venda_files.sql) | flow view: `vw_bronze_dados_files` in `tb_venda`'s 13 columns, user key as in `tb_usuario`. As built |
 | `vw_bronze_tb_curso` | [10](../code_tips/02_silver/10_vw_bronze_tb_curso.sql) | `bronze.dados_database` plus `origem = 'DATABASE'` |
 
 ### temp_tb_validacao_api
@@ -208,29 +209,71 @@ dropped by `check_sexo_usuario`.
 
 ### tb_venda
 
-[09_tb_venda.sql](../code_tips/02_silver/09_tb_venda.sql) — streaming table
-declared empty and filled by two append flows, one per source view:
+[11_tb_venda.sql](../src/pipeline/02_silver/11_tb_venda.sql) — streaming table
+`workspace.silver.tb_venda`. As built. One row per sale. Fed by two append flows, each
+`INSERT INTO ... BY NAME SELECT * FROM STREAM(<view>)`; its logic lives in its flow view
+(constitution v1.9.0):
+- `silver_tb_venda_api_flow` from `vw_silver_tb_venda_api` (valid events of
+  `temp_tb_validacao_api` that carry `payload.info_pagamento`);
+- `silver_tb_venda_files_flow` from `vw_silver_tb_venda_files` (`vw_bronze_dados_files`).
 
-- `silver_tb_venda_api_flow` ← `vw_silver_tb_venda_api`
-- `silver_tb_venda_files_flow` ← `vw_silver_tb_venda_files`
+`<preco>` is the list price, parsed from text such as `R$ 2497,00` with
+`try_cast(replace(regexp_replace(<valor>, '[^0-9,]', ''), ',', '.') AS DECIMAL(9,2))`.
+`<fracao>` is the discount fraction as `DECIMAL(5,2)`: `payload.info_pagamento.disconto`
+(a `double`, `0` when null) for the API, `disconto` (`5%`) divided by 100 for the files.
+All amounts are computed as decimals.
 
 | Column | From API | From files |
 |---|---|---|
-| `data_venda` | `access_date` as timestamp | `data_venda` as timestamp |
-| `acesso_uuid` | hash of access attributes | null |
-| `usuario_uuid` | `md5(access_date ‖ nome)` | `md5(nome_empresa ‖ nome_funcionario)` |
-| `curso_uuid` | `md5(product_name)` | `md5(curso)` |
+| `venda_uuid` | `md5(concat_ws('\|\|', timestamp_acesso, endereco_ip_acesso, local_acesso, product_name, nome))`, each component cast to string and `coalesce`d to `''` | `md5(concat_ws('\|\|', nome_empresa, nome_funcionario, data_venda, curso))`, same rule |
+| `data_venda` | `try_to_timestamp(access_date)` | `CAST(data_venda AS TIMESTAMP)` (midnight) |
+| `acesso_uuid` | same expression as `tb_acesso` | null |
+| `usuario_uuid` | same expression as `tb_acesso` and `tb_usuario` | same expression as `tb_usuario`'s files rows |
+| `curso_uuid` | `md5(payload.info_produto.product_name)` | `md5(curso)` |
 | `forma_pagamento` | `payload.info_pagamento.forma_pagamento` | `'pix'` |
-| `quantidade_parcelas` | from payload | `1` |
-| `valor_parcelas` | from payload | list price minus discount |
-| `valor_pago` | `quantidade_parcelas × valor_parcelas` | list price minus discount |
-| `percentual_disconto` | discount as `'5%'`-style text, null when none | `disconto` as received |
-| `valor_desconto` | list price × discount | list price × discount |
+| `quantidade_parcelas` (INT) | `try_cast(payload.info_pagamento.quantidade_parcelas AS INT)` | `1` |
+| `valor_parcelas` (DECIMAL(9,2)) | `payload.info_pagamento.valor_parcelas` | `<preco>` − `valor_desconto` |
+| `valor_pago` (DECIMAL(9,2)) | `quantidade_parcelas` × `valor_parcelas` | same |
+| `percentual_desconto` | `<fracao>` × 100 as a whole number, then `%`; `0%` when none | `disconto` as received; `0%` when empty |
+| `valor_desconto` (DECIMAL(9,2)) | `<preco>` × `<fracao>` | same |
 | `origem` | `'API'` | `'ARQUIVO'` |
 | `data_carga` | load timestamp | load timestamp |
 
-List prices arrive as text such as `R$ 247,00` and are parsed with
-`substr(..., 4)` plus a comma-to-dot replacement.
+Business key columns:
+
+| Key | Business key columns | Defined in |
+|---|---|---|
+| `venda_uuid` (API) | `access_date` (as timestamp), `ip_address`, the access location, `payload.info_produto.product_name`, `payload.info_usuario.nome` | `09_vw_silver_tb_venda_api.sql` |
+| `venda_uuid` (ARQUIVO) | `nome_empresa`, `nome_funcionario`, `data_venda`, `curso` | `10_vw_silver_tb_venda_files.sql` |
+
+The user name is part of the API sale key because, without it, 1,311 API sales repeated
+the key: all from events with the address `999.999.999.999`, which `tb_acesso` drops. The
+same events share `acesso_uuid` values among themselves; none of them joins `tb_acesso`.
+
+| Expectation | Rule | On violation |
+|---|---|---|
+| `check_venda_uuid` | `venda_uuid IS NOT NULL` | record only; `venda_uuid` is also unique in the table |
+| `check_usuario_uuid` | `usuario_uuid IS NOT NULL` | record only |
+| `check_curso_uuid` | `curso_uuid IS NOT NULL` | record only |
+| `check_data_venda` | `data_venda IS NOT NULL` | record only |
+| `check_valor_pago` | `valor_pago IS NOT NULL AND valor_pago > 0` | record only |
+
+No rule drops a row. On 2026-10-28 every rule passed all 420,472 rows.
+
+**Reconciliation**: API sales = valid API events with a payment (220,472 on 2026-10-28);
+files sales = rows in `bronze.dados_files` (200,000). No exclusion.
+
+**Keys that do not join**, by design, counted on 2026-10-28:
+- 2,174 API sales have an `acesso_uuid` with no row in `tb_acesso`: their event had the
+  address `999.999.999.999`;
+- 4,362 sales have a `usuario_uuid` with no row in `tb_usuario`: their user's sex is not
+  `M` or `F`.
+
+Gold resolves them to an "unknown" member.
+
+**Installments**: the payload rounds the installment value to cents, so `valor_pago`
+differs by a cent or two from `payload.info_pagamento.valor` in 78,578 API sales, net
+−535.23 in total. `valor_pago` follows the requested formula.
 
 ### tb_curso
 

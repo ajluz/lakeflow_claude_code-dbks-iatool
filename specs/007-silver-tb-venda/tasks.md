@@ -166,41 +166,41 @@ research.md's table.
   - no reference to `workspace.bronze`.
 - [X] T008 Upload with `databricks workspace import-dir src/pipeline /Workspace/Users/arthur.luz@dataslight.com.br/lakeflow_dev/src/pipeline --overwrite --profile databricks-free`. Confirm that `02_silver/` lists eleven `FILE`s, and that the three new copies are identical to the repository
 - [X] T009 Following the quota conventions, dry run (`--validate-only`) to `COMPLETED`, with the two flow views and `tb_venda` defined and two flows into `tb_venda`. Report any error to the owner
-- [ ] T010 Following the quota conventions, run the update to `COMPLETED` and record its `update_id`. Confirm the existing tables wrote only new data. If it fails after creating `tb_venda` and a fix changes its columns, **stop and ask the owner** to approve a refresh of `workspace.silver.tb_venda` only
+- [X] T010 Following the quota conventions, run the update to `COMPLETED` and record its `update_id`. Confirm the existing tables wrote only new data. If it fails after creating `tb_venda` and a fix changes its columns, **stop and ask the owner** to approve a refresh of `workspace.silver.tb_venda` only
 
 ---
 
 ## Phase 7: Validation
 
-- [ ] T011 [US1] Run quickstart.md step 3 for the `API` rows:
+- [X] T011 [US1] Run quickstart.md step 3 for the `API` rows:
   - `linhas` = `api_vendas` (T002) and `com_acesso` = `linhas`;
   - `sem_chave`, `valor_invalido`, `sem_data_carga` = 0;
   - `api_sem_acesso` = `acesso_descartado` (T002);
   - `curso_fora` = 0.
-- [ ] T012 [US2] Run quickstart.md step 3 for the `ARQUIVO` rows:
+- [X] T012 [US2] Run quickstart.md step 3 for the `ARQUIVO` rows:
   - `linhas` = `arquivo_vendas` (T002), `com_acesso` = 0, `arquivo_fora` = 0;
   - across the whole table, `chaves_repetidas` = 0 and `sem_usuario` = `usuario_descartado` (T002);
   - the column list is the 13 of the data model, in order;
   - `quality` = `silver`.
-- [ ] T013 [US3] Run the discount query of quickstart.md step 3:
+- [X] T013 [US3] Run the discount query of quickstart.md step 3:
   - `percentual_fora` = 0 and `sem_valor_desconto` = 0;
   - for each course and percentage, `min(valor_desconto)` = `max(valor_desconto)` = the amount in research.md's table, and `0.00` for `0%`.
-- [ ] T014 Run quickstart.md step 4 for the update of T010. For dataset `tb_venda`, every expectation has failed = 0 and passed = `api_vendas` + `arquivo_vendas`. Reconcile per source: candidates = rows, with no exclusion. Confirm `tb_quarentena` is unchanged by this feature
+- [X] T014 Run quickstart.md step 4 for the update of T010. For dataset `tb_venda`, every expectation has failed = 0 and passed = `api_vendas` + `arquivo_vendas`. Reconcile per source: candidates = rows, with no exclusion. Confirm `tb_quarentena` is unchanged by this feature
 - [ ] T015 Ask the owner to confirm that the Data quality tab of `tb_venda` shows the five expectations. Record the answer
 
 ---
 
 ## Phase 8: Polish
 
-- [ ] T016 Following the quota conventions, run an update with no new data. Confirm that both `tb_venda` flows write 0 rows and the counts of T011–T012 are unchanged
-- [ ] T017 [P] In `doc/pipeline-reference.md`:
+- [X] T016 Following the quota conventions, run an update with no new data. Confirm that both `tb_venda` flows write 0 rows and the counts of T011–T012 are unchanged
+- [X] T017 [P] In `doc/pipeline-reference.md`:
   - rewrite `### tb_venda` as built: the two append flows and their views, the 13 columns per source, `venda_uuid`'s business columns, the five expectations, the reconciliation with no exclusion, and the unmatched access and user keys with their counts;
   - mark `vw_silver_tb_venda_api` and `vw_silver_tb_venda_files` as built in `### Temporary views`, linked to `09_` and `10_`;
   - add them and `tb_venda` to the intro's "as built" list.
-- [ ] T018 [P] In `doc/architecture.md`, point the features-table row "Multiple append flows into one table (`CREATE FLOW ... INSERT INTO ... BY NAME`)" to `../src/pipeline/02_silver/11_tb_venda.sql`
-- [ ] T019 [P] In `doc/README.md`, add `09_vw_silver_tb_venda_api.sql`, `10_vw_silver_tb_venda_files.sql` and `11_tb_venda.sql` to the `02_silver/` layout, and change the dataset count to: in silver, 6 streaming views, 1 private streaming table and 4 streaming tables
-- [ ] T020 [P] In `doc/known-issues.md`, remove "File sales get a wrong paid amount", and reduce "Sales missing from fato_venda" to its gold part: the silver key mismatch for `unknown` access points and the empty discount no longer occur in `tb_venda`
-- [ ] T021 Final review:
+- [X] T018 [P] In `doc/architecture.md`, point the features-table row "Multiple append flows into one table (`CREATE FLOW ... INSERT INTO ... BY NAME`)" to `../src/pipeline/02_silver/11_tb_venda.sql`
+- [X] T019 [P] In `doc/README.md`, add `09_vw_silver_tb_venda_api.sql`, `10_vw_silver_tb_venda_files.sql` and `11_tb_venda.sql` to the `02_silver/` layout, and change the dataset count to: in silver, 6 streaming views, 1 private streaming table and 4 streaming tables
+- [X] T020 [P] In `doc/known-issues.md`, remove "File sales get a wrong paid amount", and reduce "Sales missing from fato_venda" to its gold part: the silver key mismatch for `unknown` access points and the empty discount no longer occur in `tb_venda`
+- [X] T021 Final review:
   - the workspace copies are identical to the repository;
   - `git status` shows changes only in `src/pipeline/02_silver/`, `doc/` and `specs/007-silver-tb-venda/`;
   - the files of features 004–006 are unchanged.
@@ -280,3 +280,74 @@ identical to the repository.
 **COMPLETED**, no error event. `vw_silver_tb_venda_api`, `vw_silver_tb_venda_files` and the
 two flows are defined. The flows appear as `workspace.bronze.silver_tb_venda_api_flow` and
 `workspace.bronze.silver_tb_venda_files_flow`, like `tb_usuario`'s (open finding).
+
+**T010 — the first load was a full refresh started from the UI.** At 21:09:41 UTC, about
+a minute after the dry run, update `c52cd902-5e79-4c40-a865-d7884fdc16a0` was started by
+`arthur.luz@dataslight.com.br` through the UI (`cause = USER_ACTION`) with
+`full_refresh = true` and no selection, so every table of the pipeline was rebuilt. It
+**COMPLETED**, and it is the update that loaded `tb_venda`. The update this task started,
+`8954b177-90bd-48af-9384-be01f7c41433` (21:13:53, `API_CALL`, no full refresh), then
+**COMPLETED** with 0 rows written by every flow. No data was lost: the landing files were
+in place, and every table has the same count as on 2026-10-18:
+
+| Table | Rows written by `c52cd902` | Rows now |
+|---|---|---|
+| `bronze.dados_api` | 2,550,955 | 2,550,955 |
+| `bronze.dados_files` | 200,000 | 200,000 |
+| `bronze.dados_database` | 3 | 3 |
+| `temp_tb_validacao_api` | 2,550,955 | (private) |
+| `tb_quarentena` | 9,240 | 9,240 |
+| `tb_acesso` | 2,516,192 | 2,516,192 |
+| `tb_usuario` | 741,234 + 200,000 | 941,234 |
+| `tb_venda` | 220,472 + 200,000 | 420,472 |
+
+The full refresh was the owner's action, not this task's; it is recorded here and
+reported. It was also the occasion the flow-name finding was waiting for (a rename needs a
+refresh); the flows were not renamed, so the finding stays open.
+
+**T011** (`API`): 220,472 rows = `api_vendas`; `com_acesso` 220,472; `sem_chave`,
+`valor_invalido`, `sem_data_carga`, `sem_data_venda`, `sem_usuario_uuid`,
+`sem_curso_uuid` all 0; `api_sem_acesso` 2,174 = `acesso_descartado`; `curso_fora` 0;
+`valor_pago` = installments × installment value on every row.
+
+**T012** (`ARQUIVO`): 200,000 rows = `arquivo_vendas`; `com_acesso` 0; `arquivo_fora` 0;
+whole table `chaves_repetidas` 0; `sem_usuario` 4,362 = `usuario_descartado`, all `API`
+(0 `ARQUIVO` sales without a user). Columns: `venda_uuid string, data_venda timestamp,
+acesso_uuid string, usuario_uuid string, curso_uuid string, forma_pagamento string,
+quantidade_parcelas int, valor_parcelas decimal(9,2), valor_pago decimal(9,2),
+percentual_desconto string, valor_desconto decimal(9,2), origem string, data_carga
+timestamp`, in the data model's order. `quality` = `silver`. Total paid 538,722,841.07.
+
+**T013**: `percentual_fora` 0 and `sem_valor_desconto` 0. For every course and
+percentage, min = max = research.md's amount: 12.35 / 24.70 / 37.05 (R$ 247),
+49.85 / 99.70 / 149.55 (R$ 997), 124.85 / 249.70 / 374.55 (R$ 2497), and 0.00 for `0%`.
+The generator ties discounts to courses in the API (R$ 247 only `0%` or `5%`; R$ 997 no
+`15%`; R$ 2497 no `5%`); this is the source data, not the pipeline.
+
+**T014**: the expectation metrics are in update `c52cd902` (update `8954b177` processed no
+rows, so its flow events carry no metrics). Every rule failed 0, passed 220,472 on the API
+flow and 200,000 on the files flow, 420,472 in total. Reconciliation: API 220,472
+candidates = 220,472 rows; files 200,000 = 200,000; no exclusion. `tb_quarentena` 9,240,
+unchanged.
+
+**T015**: open, for the owner.
+
+**T016**: satisfied by update `8954b177`, which ran with no new data after the load: both
+`tb_venda` flows wrote 0 rows, and the counts of T011–T012 are unchanged. No further
+update was run, to spare the quota.
+
+**T017–T020**: `doc/pipeline-reference.md` (`### tb_venda` as built, the two flow views,
+the intro), `doc/architecture.md` (features row to `11_tb_venda.sql`), `doc/README.md`
+(layout `09_`–`11_`; silver 6 streaming views, 1 private streaming table, 4 streaming
+tables) and `doc/known-issues.md` ("File sales get a wrong paid amount" removed; "Sales
+missing from fato_venda" reduced to its gold part, with what feature 007 fixed).
+
+**T021**: all eleven `02_silver` workspace files are identical to the repository. The
+owner committed the feature files during implementation (`39ec6ef`); `git status` then
+showed only the four `doc/` files. Features 004–006's files are unchanged.
+
+**Open (owner)**:
+- T015: the Data quality tab of `tb_venda`.
+- The flow-name finding (now four flows under `workspace.bronze`).
+- Whether the full refresh `c52cd902` was intended.
+- Commit the documentation changes and this file.

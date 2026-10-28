@@ -14,39 +14,28 @@ The pipeline targets the `workspace` catalog, but a few places still reference
 | [user_case.py](../explorations/user_case.py), last two queries | `dataslight_dev.gold.*` |
 | [clean_up_env.ipynb](../explorations/clean_up_env.ipynb) | `USE dataslight_dev.*` and `/Volumes/dataslight_dev/...` |
 
-## File sales get a wrong paid amount
-
-In [08_vw_silver_tb_venda_files.sql:13-14](../code_tips/02_silver/08_vw_silver_tb_venda_files.sql#L13-L14),
-the discount subtracted from the price is computed with `replace(..., ',', '')`
-where the rest of the file uses `replace(..., ',', '.')`. `R$ 247,00` becomes
-`24700` instead of `247.00`, so the discount is 100 times too large and
-`valor_parcelas` and `valor_pago` come out negative (247.00 − 1235.00 for a 5%
-discount). `valor_desconto` on line 16 is correct.
-
 ## Sales missing from fato_venda
 
-[04_fato_vendas.sql](../code_tips/03_gold/04_fato_vendas.sql) uses inner joins
-throughout, which drops three groups of sales:
+[04_fato_vendas.sql](../code_tips/03_gold/04_fato_vendas.sql), from the earlier pipeline,
+uses inner joins throughout. Against the new `silver.tb_venda` (feature 007) it would
+still drop two groups of sales:
 
-- **All file sales.** They have a null `acesso_uuid`
-  ([08_vw_silver_tb_venda_files.sql:5](../code_tips/02_silver/08_vw_silver_tb_venda_files.sql#L5))
-  and cannot match `tb_acesso`. The `CASE WHEN v.origem = 'ARQUIVO'` branch on
-  line 8 is therefore never reached.
-- **Sales without a discount.** `percentual_disconto` is null for them in
-  `tb_venda`. `dim_codigos` stores `'Não se aplica'` for that case, but the fact
-  query compares the raw null, which never matches. With about 70% of API
-  payments undiscounted, most sales are affected.
-- **Sales whose access row was dropped or keyed differently.** `tb_acesso`
-  drops rows with the `999.999.999.999` address, and the two files derive
-  `acesso_uuid` differently: [05_tb_acesso.sql:22-30](../code_tips/02_silver/05_tb_acesso.sql#L22-L30)
-  hashes `Mobile` / `Computador` / `unknown`, while
-  [07_vw_silver_tb_venda_api.sql:5-9](../code_tips/02_silver/07_vw_silver_tb_venda_api.sql#L5-L9)
-  hashes only `Mobile` / `Computador`. Events with an `unknown` access point get
-  two different keys.
+- **All file sales.** They have a null `acesso_uuid` and cannot match `tb_acesso`. The
+  `CASE WHEN v.origem = 'ARQUIVO'` branch on line 8 is therefore never reached.
+- **Sales whose access or user row was dropped.** `tb_acesso` drops events with the
+  `999.999.999.999` address (2,174 sales on 2026-10-28), and `tb_usuario` drops users
+  whose sex is not `M` or `F` (4,362 sales).
 
-The same key mismatch affects the left join in
-[05_obt_acesso.sql](../code_tips/03_gold/05_obt_acesso.sql), undercounting
-`qtde_vendidos`.
+The same applies to the left join in
+[05_obt_acesso.sql](../code_tips/03_gold/05_obt_acesso.sql) for the access rows. The gold
+rebuild resolves these lookups to an explicit "unknown" member (Principle VII).
+
+Fixed in silver by feature 007 (2026-10-28):
+- the paid amount of file sales: the price is now parsed as `247.00`, not `24700`, so no
+  amount is negative;
+- the empty discount: sales without a discount carry `0%` and `0.00`;
+- the `acesso_uuid` mismatch for `unknown` access points: `tb_venda` uses `tb_acesso`'s
+  expression.
 
 ## dim_tempo is reloaded on every run
 

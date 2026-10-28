@@ -123,7 +123,7 @@ The graph as rendered by the pipeline UI:
 | Expectations with `ON VIOLATION DROP ROW` (declared exclusion, not quarantined) | [05_tb_acesso.sql](../src/pipeline/02_silver/05_tb_acesso.sql), [08_tb_usuario.sql](../src/pipeline/02_silver/08_tb_usuario.sql) |
 | Expectation kept as a commented `FAIL UPDATE` | [05_tb_acesso.sql](../src/pipeline/02_silver/05_tb_acesso.sql) |
 | Two append flows into one table, one per source (`CREATE FLOW ... INSERT INTO ... BY NAME`) | [08_tb_usuario.sql](../src/pipeline/02_silver/08_tb_usuario.sql) |
-| Multiple append flows into one table (`CREATE FLOW ... INSERT INTO ... BY NAME`) | [09_tb_venda.sql](../code_tips/02_silver/09_tb_venda.sql) |
+| Multiple append flows into one table (`CREATE FLOW ... INSERT INTO ... BY NAME`) | [11_tb_venda.sql](../src/pipeline/02_silver/11_tb_venda.sql) |
 | `AUTO CDC` as SCD type 1 | [11_tb_curso.sql](../code_tips/02_silver/11_tb_curso.sql) |
 | `AUTO CDC` as SCD type 2 (`__START_AT` / `__END_AT`) | [02_dim_curso.sql](../code_tips/03_gold/02_dim_curso.sql) |
 | Explicit schema with identity surrogate keys | [01_dim_usuario.sql](../code_tips/03_gold/01_dim_usuario.sql), [02_dim_curso.sql](../code_tips/03_gold/02_dim_curso.sql), [03_dim_codigos.sql](../code_tips/03_gold/03_dim_codigos.sql) |

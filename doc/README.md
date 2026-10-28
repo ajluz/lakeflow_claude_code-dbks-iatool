@@ -46,7 +46,7 @@ lakeflow/
 │   │   ├── 02_landing_volume_verify.sql  Read-only verification report for the volume
 │   │   └── 03_pipeline_dev.json          Settings of the development pipeline
 │   ├── functions.py         Data generators + creation of gold.dim_tempo
-│   ├── user_case.ipynb      Walkthrough: case study, setup, queries per layer
+│   ├── user_case.py         Walkthrough: case study, setup, queries per layer
 │   └── clean_up_env.ipynb   Drops tables and landing files
 ├── data/                    Local tooling state, no datasets
 └── doc/                     This documentation

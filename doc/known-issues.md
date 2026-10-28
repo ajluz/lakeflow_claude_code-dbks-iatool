@@ -11,7 +11,7 @@ The pipeline targets the `workspace` catalog, but a few places still reference
 
 | Location | Reference |
 |---|---|
-| [user_case.ipynb](../explorations/user_case.ipynb), last two queries | `dataslight_dev.gold.*` |
+| [user_case.py](../explorations/user_case.py), last two queries | `dataslight_dev.gold.*` |
 | [clean_up_env.ipynb](../explorations/clean_up_env.ipynb) | `USE dataslight_dev.*` and `/Volumes/dataslight_dev/...` |
 
 ## File sales get a wrong paid amount
@@ -74,7 +74,7 @@ expensive at the volumes the generators produce.
   that identity values on materialized views can be recomputed when the view is
   refreshed, which would change keys under `fato_venda`; worth confirming
   against the current documentation.
-- The bronze filter in [user_case.ipynb](../explorations/user_case.ipynb) mixes
+- The bronze filter in [user_case.py](../explorations/user_case.py) mixes
   `AND` and `OR` without parentheses, so `WHERE 1=1 AND a OR b OR c` does not
   group the way the comments suggest once more conditions are uncommented.
 - [clean_up_env.ipynb](../explorations/clean_up_env.ipynb) nests single quotes

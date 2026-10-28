@@ -66,7 +66,7 @@ Import the repository into the workspace as a Git folder, or upload
 
 ## 2. Generate the source data
 
-Open [explorations/user_case.ipynb](../explorations/user_case.ipynb) and run the
+Open [explorations/user_case.py](../explorations/user_case.py) and run the
 **Setup** section.
 
 1. `%run "./functions"` installs `dbldatagen`, defines the generators and
@@ -135,7 +135,7 @@ pipeline.
 
 ## 4. Explore the results
 
-The rest of `user_case.ipynb` queries each layer in turn.
+The rest of `user_case.py` queries each layer in turn.
 
 **Bronze** — the three raw tables, with commented filters that isolate the bad
 records each expectation targets.

@@ -1,43 +1,38 @@
 <!--
 SYNC IMPACT REPORT (scratch material for review; remove before committing)
 
-Version change: 1.9.0 → 1.10.0
-Bump rationale: MINOR. Guidance is materially expanded. Platform and Technology Constraints
-gains an "AI tools" constraint that states how Databricks Assistant, Genie, AI Functions
-and Agent Bricks are used in this project. Development Workflow and Quality Gates gains a
-rule that AI output is a draft, reviewed like any other change. No principle changes.
-Owner, 2026-10-25: "within the constitution we considering the databricks IA tools for
-the development?" followed by "please, add it on the constitution".
+Version change: 1.10.0 → 1.11.0
+Bump rationale: MINOR. Principle I gains a bounded exception: the course feed's boundary
+view is named `vw_bronze_tb_curso` and may convert the price and add `origem` and
+`data_carga`. The `dim_curso` exception and the naming rule point to it. Nothing is
+removed.
+Owner, 2026-10-28 (feature 008, clarification): chose the diagram's name,
+`vw_bronze_tb_curso`, "with a constitution amendment to allow it". The extra columns
+follow from feature 008's plan: an `AUTO CDC` flow reads only a named view, so it cannot
+compute columns.
 
-Modified principles: none
+Modified principles (titles unchanged):
+- I. Medallion Architecture: new bullet "Exception: the course feed's boundary view".
+  The `dim_curso` exception now reads `vw_bronze_tb_curso` instead of
+  `vw_bronze_dados_database`.
 
 Modified sections:
-- Platform and Technology Constraints: new "AI tools" constraint.
-  - Databricks Assistant MAY write, explain and debug pipeline SQL; its output is reviewed
-    against the constitution before commit.
-  - Genie is read-only and a Genie Agent for this project is defined over gold only.
-  - AI Functions MUST NOT be used in bronze, silver or gold datasets (non-deterministic
-    results break hash keys and reconciliation); they are permitted under explorations/.
-  - Agent Bricks are consumers of gold, never part of the pipeline.
-  - Every AI tool is optional: the pipeline runs and reconciles without any of them.
-- Development Workflow and Quality Gates: AI-generated code and answers are drafts, held
-  to the Core Principles, reviewed by a person before commit, and never a substitute for
-  the approvals the section requires (full refresh, table drop).
+- Platform and Technology Constraints, Naming: boundary views follow
+  `vw_<source zone>_<dataset>`, except `vw_bronze_tb_curso`.
 
 Added sections: none
 Removed sections: none
 
 Dependent templates: not modified by this command; they read the constitution at runtime.
 
-Affected files: none. No file under src/ or explorations/ uses an AI Function, Genie or
-Agent Bricks today, so no migration is needed.
+Affected files: none. No file defines a view over `bronze.dados_database` yet. Feature 008
+(`specs/008-silver-tb-curso/plan.md`) recorded the two deviations in Complexity Tracking;
+under v1.11.0 they are no longer deviations.
 
 Follow-up TODOs:
-- The AI Functions rule is the strict option. A feature that wants ai_classify or
-  ai_extract inside a silver dataset comes as an amendment naming the dataset and the
-  function.
-- Feature 006 follow-ups from v1.9.0 (flow views for tb_usuario, pending refresh of
-  tb_usuario and tb_acesso) are unchanged by this amendment.
+- Feature 008 plan: re-check Principle I and Constraints against v1.11.0 (both PASS) and
+  empty Complexity Tracking.
+- Commit the v1.10.0 and v1.11.0 amendments (remove this report first).
 - No deferred placeholders.
 -->
 
@@ -68,9 +63,20 @@ Every dataset belongs to exactly one layer, and data moves only forward through 
   nothing else: no filters, casts, renames or rules. Because only bronze carries those
   columns, every read of a bronze table goes through such a view. `processing_time` is not
   excluded by this rule.
+- **Exception: the course feed's boundary view.** The boundary view over
+  `bronze.dados_database` is named `vw_bronze_tb_curso`, the name drawn in
+  `doc/lakeflow_architecture.png`. Besides excluding `source_file_name` and
+  `_rescued_data`, it MAY convert `valor_curso` to `DECIMAL(9,2)` and add `origem` and
+  `data_carga`, because the `AUTO CDC` flows that read it cannot compute columns. The
+  exception is bounded as follows:
+  - It applies only to this view. Any other boundary view that does more than exclude the
+    lineage columns requires an amendment naming it here.
+  - The view MUST NOT filter rows, rename columns, or change any other column.
+  - `silver.tb_curso` and `gold.dim_curso` both read the feed through this view, so their
+    current versions carry the same price type and record source.
 - **Exception: SCD type 2 dimensions read the bronze change feed.** `gold.dim_curso` reads
-  `bronze.dados_database` through its boundary view, `vw_bronze_dados_database`, instead of
-  reading silver. Its silver counterpart, `silver.tb_curso`, is an SCD
+  `bronze.dados_database` through its boundary view, `vw_bronze_tb_curso` (see the
+  exception above), instead of reading silver. Its silver counterpart, `silver.tb_curso`, is an SCD
   type 1 target: it keeps only the latest version of each course and is updated and
   deleted in place, so it holds neither the history nor the ordered change events that
   `AUTO CDC ... STORED AS SCD TYPE 2` needs. The exception is bounded as follows:
@@ -373,9 +379,9 @@ loss with an explicit "unknown".
     purposes of this rule.
 - **Naming**: object and column names are in Portuguese, lowercase snake_case. Silver
   tables use the prefix `tb_`, temporary views `vw_` (boundary views
-  `vw_<source zone>_<dataset>`), private staging tables `temp_tb_`,
-  dimensions `dim_`, facts `fato_`, and one-big-tables `obt_`. Flows are named
-  `<layer>_<target>[_<source>]_flow`.
+  `vw_<source zone>_<dataset>`, except `vw_bronze_tb_curso`, Principle I), private
+  staging tables `temp_tb_`, dimensions `dim_`, facts `fato_`, and one-big-tables `obt_`.
+  Flows are named `<layer>_<target>[_<source>]_flow`.
 - **Key and lineage columns**: hash keys end in `_uuid`, surrogate keys start with `sk_`,
   the record source is `origem`, and the load timestamp is `data_carga`, as defined in
   Principles VI and VII.
@@ -467,4 +473,4 @@ this repository.
   `databricks-pipelines` skill gives syntax and patterns. Both inform implementation;
   neither overrides this document.
 
-**Version**: 1.10.0 | **Ratified**: 2026-10-10 | **Last Amended**: 2026-10-25
+**Version**: 1.11.0 | **Ratified**: 2026-10-10 | **Last Amended**: 2026-10-28

@@ -111,35 +111,35 @@ reviewed only.
   - no `APPLY CHANGES`, `LIVE`, `CREATE OR REPLACE`, `MERGE`, `md5`, `ON VIOLATION`, `SCD TYPE 2`, `TRACK HISTORY`, `PARTITIONED`, `CLUSTER` or `ai_`;
   - no read of `workspace.bronze` outside `12_vw_bronze_tb_curso.sql`.
 - [X] T008 Upload with `databricks workspace import-dir src/pipeline /Workspace/Users/arthur.luz@dataslight.com.br/lakeflow_dev/src/pipeline --overwrite --profile databricks-free`. Confirm that `02_silver/` lists thirteen `FILE`s, and that the two new copies are identical to the repository (export with `--format AUTO` to stdout and `cmp`)
-- [ ] T009 Following the quota conventions, dry run (`--validate-only`) to `COMPLETED`, with `vw_bronze_tb_curso`, `tb_curso` and `silver_tb_curso_flow` defined. Report any error to the owner
-- [ ] T010 Following the quota conventions, run the update to `COMPLETED` and record its `update_id` and who created each update in that window (event log `create_update` and `user_action`). If it fails after creating `tb_curso` and a fix changes its columns, **stop and ask the owner** to approve a refresh of `workspace.silver.tb_curso` only
+- [X] T009 Following the quota conventions, dry run (`--validate-only`) to `COMPLETED`, with `vw_bronze_tb_curso`, `tb_curso` and `silver_tb_curso_flow` defined. Report any error to the owner
+- [X] T010 Following the quota conventions, run the update to `COMPLETED` and record its `update_id` and who created each update in that window (event log `create_update` and `user_action`). If it fails after creating `tb_curso` and a fix changes its columns, **stop and ask the owner** to approve a refresh of `workspace.silver.tb_curso` only
 
 ---
 
 ## Phase 7: Validation
 
-- [ ] T011 [US1] Run quickstart.md step 3:
+- [X] T011 [US1] Run quickstart.md step 3:
   - three rows: `beginner` `247.00`, `intermediate` `997.00`, `advanced` `2497.00`, each `origem = 'DATABASE'`;
   - `linhas` = `cursos` = 3, `origem_fora` = `sem_data_carga` = 0;
   - columns: the six of the data model, `valor_curso decimal(9,2)`, none of `change_type`, `timestamp_change`, `processing_time`, `source_file_name`, `_rescued_data`; record their order;
   - `vendas_sem_curso` = `acessos_sem_curso` = 0;
   - `quality` = `silver`.
-- [ ] T012 Run quickstart.md step 4 for the update that processed the three changes. For dataset `tb_curso`, each of `check_curso_uuid`, `check_nome_curso` and `check_valor_curso` passed 3 and failed 0
+- [X] T012 Run quickstart.md step 4 for the update that processed the three changes. For dataset `tb_curso`, each of `check_curso_uuid`, `check_nome_curso` and `check_valor_curso` passed 3 and failed 0
 - [ ] T013 Ask the owner to confirm that the Data quality tab of `tb_curso` shows the three expectations. Record the answer
 
 ---
 
 ## Phase 8: Polish
 
-- [ ] T014 Following the quota conventions, run an update with no new data, unless T010's window already contains one that ran after the load. Confirm that `silver_tb_curso_flow` applies 0 changes and T011's results are unchanged
-- [ ] T015 [P] In `doc/pipeline-reference.md`:
+- [X] T014 Following the quota conventions, run an update with no new data, unless T010's window already contains one that ran after the load. Confirm that `silver_tb_curso_flow` applies 0 changes and T011's results are unchanged
+- [X] T015 [P] In `doc/pipeline-reference.md`:
   - rewrite `### tb_curso` as built: source `vw_bronze_tb_curso`, key `curso_uuid`, sequence `timestamp_change`, delete condition `change_type = 'delete'`, SCD type 1, `COLUMNS * EXCEPT (change_type, timestamp_change, processing_time)`, the six columns with `valor_curso DECIMAL(9,2)`, the three expectations, and that updates and deletions are shown at the talk;
   - in `### Temporary views`, replace the `vw_bronze_tb_curso` row with the built view, linked to `12_`, stating it is the course feed's boundary view under constitution v1.11.0;
   - add both to the intro's "as built" list.
-- [ ] T016 [P] In `doc/architecture.md`, point the features-table row "`AUTO CDC` as SCD type 1" to `../src/pipeline/02_silver/13_tb_curso.sql`
-- [ ] T017 [P] In `doc/README.md`, add `12_vw_bronze_tb_curso.sql` and `13_tb_curso.sql` to the `02_silver/` layout, and change the dataset count to: in silver, 7 streaming views, 1 private streaming table and 5 streaming tables
-- [ ] T018 [P] In `doc/known-issues.md`, replace the smaller item "`dim_curso` and `tb_curso` both read the bronze change feed. `tb_curso` is not consumed by any gold table." with a statement that both read the feed through `vw_bronze_tb_curso` by design (constitution Principle I), and that `tb_curso` is the silver reference for sales and accesses
-- [ ] T019 Final review:
+- [X] T016 [P] In `doc/architecture.md`, point the features-table row "`AUTO CDC` as SCD type 1" to `../src/pipeline/02_silver/13_tb_curso.sql`
+- [X] T017 [P] In `doc/README.md`, add `12_vw_bronze_tb_curso.sql` and `13_tb_curso.sql` to the `02_silver/` layout, and change the dataset count to: in silver, 7 streaming views, 1 private streaming table and 5 streaming tables
+- [X] T018 [P] In `doc/known-issues.md`, replace the smaller item "`dim_curso` and `tb_curso` both read the bronze change feed. `tb_curso` is not consumed by any gold table." with a statement that both read the feed through `vw_bronze_tb_curso` by design (constitution Principle I), and that `tb_curso` is the silver reference for sales and accesses
+- [X] T019 Final review:
   - the workspace copies are identical to the repository;
   - `git status` shows changes only in `src/pipeline/02_silver/`, `doc/` and `specs/008-silver-tb-curso/`;
   - the files of features 004–007 are unchanged;
@@ -206,3 +206,48 @@ or `TRACK HISTORY` (T005); the delete condition is on line 24, before `SEQUENCE 
 
 **T008**: upload complete; `02_silver/` lists thirteen `FILE`s; both new copies are
 identical to the repository. Warehouse stopped.
+
+**T009**: dry run `0de0f129-3879-4717-90d6-0c882a8e7c6f` **COMPLETED**, no error event;
+`vw_bronze_tb_curso`, `workspace.silver.tb_curso` and the flow are defined. The flow
+appears as `workspace.bronze.silver_tb_curso_flow` (open flow-name finding).
+
+**T010**: update `746a6970-9322-4abd-936b-52657d37df16` **COMPLETED**. In the window only
+this task's two updates were created, both `API_CALL`, neither a full refresh: the dry run
+`0de0f129` (21:43:39 UTC) and this update (21:48:55).
+
+**T011**: three rows, ordered by price: `beginner` *Construindo um Data Lakehouse com SQL
+e DLT* 247.00, `intermediate` *Mastering SQL no Databricks* 997.00, `advanced` *Programa
+Data Heroes* 2497.00, each `origem = 'DATABASE'`, `data_carga` 2026-10-28T21:50:33.586Z.
+`linhas` = `cursos` = 3; `origem_fora` = `sem_data_carga` = 0. Columns, in order:
+`curso_uuid string, nome_curso string, nivel_curso string, valor_curso decimal(9,2),
+origem string, data_carga timestamp`; no control or lineage column. `vendas_sem_curso` =
+`acessos_sem_curso` = 0. `quality` = `silver`.
+
+**T012**: in update `746a6970`, `check_curso_uuid`, `check_nome_curso` and
+`check_valor_curso` each passed 3, failed 0. The flow's events carry no
+`num_output_rows` metric for an `AUTO CDC` flow; the table's contents (T011) are the
+evidence of the three applied changes.
+
+**T013**: open, for the owner.
+
+**T014**: update `3c52c735-a49b-4eb9-bba4-f657d4855689` (no new data, `API_CALL`, no full
+refresh) **COMPLETED**. `tb_curso` still has 3 rows and the same `data_carga`
+(21:50:33.586Z), so the flow applied no change.
+
+**T015–T018**: `doc/pipeline-reference.md` (`### tb_curso` as built; the
+`vw_bronze_tb_curso` row; the intro), `doc/architecture.md` (features row to
+`13_tb_curso.sql`), `doc/README.md` (layout `12_`–`13_`; silver 7 streaming views, 1
+private streaming table, 5 streaming tables) and `doc/known-issues.md` (the
+`dim_curso`/`tb_curso` item restated as the intended design).
+
+**T019**: all thirteen `02_silver` workspace files are identical to the repository.
+`bronze.dados_database` still holds only the three inserts. The owner committed the work
+during implementation (`d80ecc3`, `7d34289`, `ceb7bfb`); every file in those commits is in
+`src/pipeline/02_silver/`, `doc/` or `specs/008-silver-tb-curso/`, plus the v1.11.0
+amendment in `.specify/memory/constitution.md`. Features 004–007's files are unchanged.
+
+**Open (owner)**:
+- T013: the Data quality tab of `tb_curso`.
+- T020–T021: the update and the deletion, at the talk (quickstart.md step 6).
+- The flow-name finding (now five flows under `workspace.bronze`).
+- Remove the constitution's Sync Impact Report (committed in `d80ecc3`).

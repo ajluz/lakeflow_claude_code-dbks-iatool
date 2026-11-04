@@ -63,8 +63,13 @@ expensive at the volumes the generators produce.
 - Identity surrogate keys are declared on a materialized view (`dim_codigos`) and on an
   `AUTO CDC` target (`dim_curso`) in the earlier pipeline. Identity columns are not
   supported on materialized views (`databricks-pipelines` skill), and keys that can be
-  reassigned would change under `fato_venda`. `dim_usuario` no longer has this issue: since
-  feature 009 its key is `xxhash64(usuario_uuid)`, which never changes for a user.
+  reassigned would change under `fato_venda`. `AUTO CDC` targets do not support them either
+  ([Databricks limitations](https://docs.databricks.com/aws/en/ldp/limitations)).
+  `dim_usuario` no longer has this issue: since feature 009 its key is
+  `xxhash64(usuario_uuid)` with the sign bit cleared, which never changes for a user.
+- `dim_usuario` declares no expectations (feature 009, by the owner's decision), so a null key
+  would not stop an update. Its members are generated from the silver stream, so each silver
+  row emits three rows, and the dimension has no members while silver is empty.
 - The bronze filter in [user_case.py](../explorations/user_case.py) mixes
   `AND` and `OR` without parentheses, so `WHERE 1=1 AND a OR b OR c` does not
   group the way the comments suggest once more conditions are uncommented.

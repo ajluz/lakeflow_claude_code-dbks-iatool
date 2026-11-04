@@ -7,7 +7,8 @@ The Bronze section, and in Silver the views `vw_bronze_dados_api` and
 `vw_bronze_dados_files`, the course feed view `vw_bronze_tb_curso`, the flow views
 `vw_silver_tb_usuario_api`, `vw_silver_tb_usuario_files`, `vw_silver_tb_venda_api` and
 `vw_silver_tb_venda_files`, and the sections `temp_tb_validacao_api`, `tb_quarentena`,
-`tb_acesso`, `tb_usuario`, `tb_venda` and `tb_curso`, describe the pipeline as it is built today, under [src/pipeline/](../src/pipeline/). The other Silver datasets and the Gold
+`tb_acesso`, `tb_usuario`, `tb_venda` and `tb_curso`, and in Gold the section
+`dim_usuario` with its flow view, describe the pipeline as it is built today, under [src/pipeline/](../src/pipeline/). The other Silver datasets and the Gold
 section still describe the earlier pipeline, whose `code_tips/` folder is no longer
 in the repository; they will be replaced as those layers are rebuilt.
 
@@ -332,9 +333,42 @@ Calendar dimension created by the last cell of
 
 ### dim_usuario
 
-[01_dim_usuario.sql](../code_tips/03_gold/01_dim_usuario.sql) — materialized
-view over `silver.tb_usuario` (all columns except `data_carga`), with identity
-surrogate key `sk_usuario` and `dt_carga` defaulting to the load time.
+[02_dim_usuario.sql](../src/pipeline/03_gold/02_dim_usuario.sql) — streaming table
+`workspace.gold.dim_usuario`, target of the `AUTO CDC` flow
+`gold_dim_usuario_tb_usuario_flow`. As built. Grain: one user. **SCD type 1**: key
+`usuario_uuid`, sequence silver's `data_carga`, no history. Silver delivers no delete event,
+so the flow has no delete condition, and a user removed from silver keeps its row.
+
+It reads [vw_gold_dim_usuario_tb_usuario](../src/pipeline/03_gold/01_vw_gold_dim_usuario_tb_usuario.sql),
+a temporary view over `STREAM(silver.tb_usuario)` that computes the key and `data_carga`.
+
+| Column | Type | From |
+|---|---|---|
+| `sk_usuario` | BIGINT | `xxhash64(usuario_uuid) & 9223372036854775807`; `-1` and `-2` for the members |
+| `usuario_uuid` | STRING | business key, the silver hash key; `'-1'` and `'-2'` for the members |
+| `nome_usuario`, `email_usuario`, `sexo_usuario`, `estado_usuario`, `profissao_usuario`, `empresa_usuario`, `origem` | STRING | silver, unchanged; the member's label for the members |
+| `idade_usuario` | INT | silver, unchanged; null for the members |
+| `data_carga` | TIMESTAMP | `current_timestamp()`: the time gold last wrote the row, not silver's load time. It does not move on an update with no new data |
+
+**Surrogate key.** `sk_usuario` is a deterministic function of the business key, so it does
+not depend on any stored state. Identity columns are not supported on `AUTO CDC` targets. The
+mask clears the sign bit, so **only the members have a negative key**, and `sk_usuario < 0`
+selects them.
+
+**Default members**: `-1` / `'-1'` "Desconhecido" (unknown) and `-2` / `'-2'` "Não se aplica"
+(not applicable). Spark rejects a `UNION` of a stream and literal rows, so each silver row
+emits three rows, the user and the two members, and the flow keeps one row per key: about 2.8
+million rows emitted on the first load for 941,236 kept. The members appear with the first
+silver row that reaches gold. Facts resolve `sk_usuario` by joining on `usuario_uuid`; they
+use `-1` when there is no match (4,362 sales users on 2026-11-04, whose sex failed silver's
+rule) and `-2` when the fact has no user by nature.
+
+**Expectations**: none, because the feature's spec requests none (constitution v2.0.0,
+Principle III). A null key does not stop an update, so keys are verified by query.
+
+On 2026-11-04: 941,236 rows (`API` 741,234, `ARQUIVO` 200,000, 2 members), every key unique
+and present, and every attribute equal to silver's. A second update with no new data left
+every key and `data_carga` unchanged.
 
 ### dim_curso
 

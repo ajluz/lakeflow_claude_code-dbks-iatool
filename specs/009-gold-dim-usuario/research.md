@@ -1,11 +1,19 @@
 # Research: Gold User Dimension
 
-**Feature**: [spec.md](spec.md) | **Date**: 2026-10-28
+**Feature**: [spec.md](spec.md) | **Date**: 2026-10-28, revised 2026-11-04
+
+Decisions 1, 2, 3 and 5 were replaced on 2026-11-04, when the owner directed that the
+dimension use `AUTO CDC`. Decision 7 was replaced after constitution v2.0.0. Decisions 8 and
+9 were added.
 
 Sources consulted: constitution v1.11.0 (Principles I, III, V, VII; Constraints); the
 `databricks-pipelines` skill (`references/materialized-view-sql.md`,
 `expectations-sql.md`); feature 006 (`tb_usuario`); `doc/known-issues.md`; the pipeline's
-settings; queries on the workspace (profile `databricks-free`) on 2026-10-28.
+settings; queries on the workspace (profile `databricks-free`) on 2026-10-28 and
+2026-11-04; the Databricks pages
+[Pipeline limitations](https://docs.databricks.com/aws/en/ldp/limitations),
+[The AUTO CDC APIs](https://docs.databricks.com/aws/en/ldp/cdc) and
+[CREATE FLOW](https://docs.databricks.com/aws/en/ldp/developer/ldp-sql-ref-create-flow).
 
 ## Facts established
 
@@ -15,45 +23,47 @@ settings; queries on the workspace (profile `databricks-free`) on 2026-10-28.
 | Users referenced by `tb_venda` but absent from `tb_usuario` | 4,362 (their sex failed `check_sexo_usuario`) |
 | Accesses without a user | 1,767,621 |
 | Pipeline source | glob `.../lakeflow_dev/src/pipeline/**`; default schema `bronze`; serverless |
-| `workspace.gold` | holds `dim_tempo` only |
+| `workspace.gold` | held `dim_tempo` only |
+| Masked key on 2026-11-04 | 941,234 users, 941,234 distinct `xxhash64(usuario_uuid) & 9223372036854775807`, no collision; silver's `data_carga` is `TIMESTAMP`, never null |
 
-## Decision 1: A materialized view
+## Decision 1: A streaming table fed by `AUTO CDC`
 
-- **Decision**: `CREATE OR REFRESH MATERIALIZED VIEW workspace.gold.dim_usuario`, reading
-  `workspace.silver.tb_usuario` without `STREAM`.
-- **Rationale**: Principle V: a gold full-scan result is a materialized view. The
-  dimension is not fed by a change feed (silver users are append-only), so the streaming
-  exception for SCD type 2 dimensions does not apply.
-- **Alternatives considered**: a streaming table with an append flow from `tb_usuario`
-  (would keep identity values between updates, but not across a full refresh, and could
-  not hold the two members without a second flow of literals).
+- **Decision**: `CREATE OR REFRESH STREAMING TABLE workspace.gold.dim_usuario`, the target of
+  an `AUTO CDC` flow that reads `workspace.silver.tb_usuario` as a stream.
+- **Rationale**: the owner's direction on 2026-11-04. Only new silver rows are processed on
+  each update, and a repeated key overwrites the row in place, which is SCD type 1.
+- **Alternatives considered**: the first version's materialized view (replaced by the
+  owner's direction).
 
-## Decision 2: `sk_usuario = xxhash64(usuario_uuid)`
+## Decision 2: `sk_usuario = xxhash64(usuario_uuid) & 9223372036854775807`
 
-- **Decision**: the surrogate key is `xxhash64(usuario_uuid)`, a `BIGINT`.
+- **Decision**: the surrogate key is computed in the flow view, as a non-negative `BIGINT`.
 - **Rationale**:
+  - The owner asked for an identity column, but
+    [identity columns are not supported on `AUTO CDC` targets](https://docs.databricks.com/aws/en/ldp/limitations).
+    A community answer the owner shared reports that such a column stays null.
   - Principle VII: one column, and a value that never changes for a given user. A
     deterministic function of the business key gives the same value on every update,
     refresh and full refresh, with no state to lose.
-  - The skill's `materialized-view-sql.md`: identity columns are not supported on
-    materialized views, which settles the open item in `doc/known-issues.md` for this
-    dimension.
-  - `xxhash64` is a built-in Spark function with a fixed seed, so its value does not
-    depend on the run.
-- **Collision risk**: with 941,236 keys in a 64-bit space, the chance of any collision is
-  about 2.4 × 10⁻⁸. Uniqueness is verified after each load (quickstart); a collision
-  would fail that check, not pass silently.
-- **Alternatives considered**: an identity column (not supported on a materialized view;
-  reassignable); `row_number()` (changes when rows are added); the `md5` string itself
-  (not a compact surrogate; the constitution separates `sk_` from `_uuid`).
+  - The mask clears the sign bit, so negative keys mean only the members.
+- **Collision risk**: with 941,236 keys in a 63-bit space, the chance of any collision is
+  about 4.8 × 10⁻⁸. Measured on 2026-11-04: none. Uniqueness is verified after each load.
+- **Alternatives considered**:
+  - a regular Delta table with an identity column, filled by `INSERT` from the streaming
+    table (Principle II forbids imperative statements, and it cannot apply updates);
+  - `row_number()` or `monotonically_increasing_id()` in a downstream view (Principle VII:
+    values can change);
+  - an append-only key table with an identity column (more datasets, the sources disagree
+    on identity in streaming tables, and a full refresh could reassign keys);
+  - the `md5` string itself (FR-002 fixes `BIGINT`, and the constitution separates `sk_`
+    from `_uuid`).
 
-## Decision 3: SCD type 1 by latest silver row
+## Decision 3: SCD type 1 through `AUTO CDC`
 
-- **Decision**: `QUALIFY row_number() OVER (PARTITION BY usuario_uuid ORDER BY data_carga
-  DESC) = 1` over silver.
-- **Rationale**: the request says "no SCD type 2"; type 1 keeps one current row per user.
-  Silver has no repeated key today, so the window changes nothing now but keeps the grain
-  if silver ever appends a key twice.
+- **Decision**: `KEYS (usuario_uuid)`, `SEQUENCE BY data_carga_silver`, `STORED AS SCD TYPE
+  1`.
+- **Rationale**: silver has no repeated key today, so the flow changes nothing now, but it
+  keeps the grain if silver ever delivers a key twice: the latest silver row wins.
 
 ## Decision 4: The two members
 
@@ -75,26 +85,53 @@ settings; queries on the workspace (profile `databricks-free`) on 2026-10-28.
 
 ## Decision 5: `data_carga`
 
-- **Decision**: `current_timestamp() AS data_carga` on every row.
-- **Rationale**: the spec defines it as the time the row was loaded into gold. Because the
-  function is non-deterministic, the view is recomputed in full on each update
-  (`materialized-view-sql.md`), so `data_carga` shows the last refresh. At 941,236 rows
-  that costs little.
-- **Alternatives considered**: carrying silver's `data_carga` (a different meaning, and
-  the spec asks for the gold load time).
+- **Decision**: `current_timestamp() AS data_carga` in the flow view, for users and members.
+  Silver's `data_carga` is renamed to `data_carga_silver`, sequences the flow, and
+  does not reach the target.
+- **Rationale**: `AUTO CDC` writes only rows that change, so `data_carga` is the time gold
+  last wrote the row (owner, 2026-11-04). It does not move on an update with no new data.
+- **Alternatives considered**: a materialized view on top that stamps every row on each
+  refresh (one more dataset, and a full recompute on every update).
 
 ## Decision 6: No boundary view between silver and gold
 
-- **Decision**: the view reads `workspace.silver.tb_usuario` directly.
+- **Decision**: the flow view reads `workspace.silver.tb_usuario` directly.
 - **Rationale**: Principle I's boundary views exist to drop the bronze lineage columns,
   "because only bronze carries those columns, every read of a bronze table goes through
   such a view". Silver tables carry none of them. The diagram draws `S3 → G1` with no
   view, and the target-graph rule forbids adding one.
 
-## Decision 7: Expectations
+## Decision 7: No expectations
 
-- **Decision**: `check_sk_usuario` (`sk_usuario IS NOT NULL`) and `check_usuario_uuid`
-  (`usuario_uuid IS NOT NULL`), both `ON VIOLATION FAIL UPDATE`.
-- **Rationale**: Principle III reserves `FAIL UPDATE` for invariants such as a null key in
-  a gold dimension. Uniqueness is not a row-level condition, so it is verified by query.
-- **Expected failures**: 0.
+- **Decision**: `dim_usuario` declares no expectation.
+- **Rationale**: the owner's decision on 2026-11-04. Constitution v2.0.0 allows an
+  expectation only when a spec requests it, and FR-008 requests none.
+- **Consequence**: a null key no longer stops the update. Quickstart step 3 verifies the keys
+  by query after a load.
+
+## Decision 8: Members generated in the flow view
+
+- **Decision**: each silver row emits three rows through `LATERAL VIEW explode(array(...))`:
+  the user, `-1` and `-2`. The members' sequence is `TIMESTAMP'1900-01-01'`. The `AUTO CDC`
+  flow keeps one row per key.
+- **Rationale**: one view, one flow, one target, and no extra table or setup step, which is
+  what the owner asked for. It costs about 2.8 million rows emitted on the first load for
+  941,236 rows kept.
+- **Limits**: members appear only once a silver row reaches gold. Whether new silver rows
+  rewrite the members' `data_carga` was not exercised, because the generators must not run.
+- **Alternatives tried or considered**:
+  - `UNION ALL` of literal rows in the view (the owner's first choice): dry run `d14aaf4f`
+    completed, but update `771c5ad8` failed with `Union between streaming and batch
+    DataFrames/Datasets is not supported`. **A dry run does not catch this**;
+  - `AUTO CDC ONCE ... FROM SNAPSHOT`: dry run `e7a215fc` failed with
+    `APPLY_CHANGES_FROM_SNAPSHOT_EXPECTATIONS_NOT_SUPPORTED` while the target had
+    expectations. A snapshot also treats absent keys as deleted at its version;
+  - a static reference table with a second flow (one more table and a setup step; the owner
+    chose against it);
+  - a materialized view over the target that adds the members (one more dataset, and the
+    public table would no longer be the `AUTO CDC` target).
+
+## Decision 9: No delete condition
+
+- **Decision**: the flow has no `APPLY AS DELETE WHEN`, recorded as a deviation in the plan.
+- **Rationale**: silver delivers no delete event. A user removed from silver keeps a row.

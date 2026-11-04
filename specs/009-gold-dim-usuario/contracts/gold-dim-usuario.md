@@ -1,49 +1,28 @@
 # Contract: The Gold User Dimension
 
-**Feature**: [../spec.md](../spec.md) | **Date**: 2026-10-28
+**Feature**: [../spec.md](../spec.md) | **Date**: 2026-10-28, revised 2026-11-04
 
 `fato_venda` and `obt_acesso` will rely on `dim_usuario`'s keys and members.
 
-## File
+## Files
 
 | File | Dataset | Reads |
 |---|---|---|
-| `src/pipeline/03_gold/01_dim_usuario.sql` | `workspace.gold.dim_usuario` (materialized view) | `workspace.silver.tb_usuario`, batch |
+| `src/pipeline/03_gold/01_vw_gold_dim_usuario_tb_usuario.sql` | `vw_gold_dim_usuario_tb_usuario` (temporary view) | `workspace.silver.tb_usuario`, streaming |
+| `src/pipeline/03_gold/02_dim_usuario.sql` | `workspace.gold.dim_usuario` (streaming table) | the view |
 
-## `01_dim_usuario.sql`
-
-```sql
-CREATE OR REFRESH MATERIALIZED VIEW workspace.gold.dim_usuario (
-  CONSTRAINT check_sk_usuario   EXPECT (sk_usuario IS NOT NULL)   ON VIOLATION FAIL UPDATE,
-  CONSTRAINT check_usuario_uuid EXPECT (usuario_uuid IS NOT NULL) ON VIOLATION FAIL UPDATE
-)
-COMMENT '<Portuguese>'
-TBLPROPERTIES ("quality" = "gold")
-AS
-SELECT xxhash64(usuario_uuid) AS sk_usuario, usuario_uuid, nome_usuario, email_usuario,
-       idade_usuario, sexo_usuario, estado_usuario, profissao_usuario, empresa_usuario,
-       origem, current_timestamp() AS data_carga
-FROM workspace.silver.tb_usuario
-QUALIFY row_number() OVER (PARTITION BY usuario_uuid ORDER BY data_carga DESC) = 1
-UNION ALL
-SELECT CAST(-1 AS BIGINT), '-1', 'Desconhecido', 'Desconhecido', CAST(NULL AS INT),
-       'Desconhecido', 'Desconhecido', 'Desconhecido', 'Desconhecido', 'Desconhecido',
-       current_timestamp()
-UNION ALL
-SELECT CAST(-2 AS BIGINT), '-2', 'Não se aplica', 'Não se aplica', CAST(NULL AS INT),
-       'Não se aplica', 'Não se aplica', 'Não se aplica', 'Não se aplica', 'Não se aplica',
-       current_timestamp();
-```
-
-The shape above is binding; the exact layout and comments are the implementer's. If
-`QUALIFY` inside a `UNION ALL` branch is rejected, wrap the silver branch in a subquery.
+The two files as built are the binding statements. If a change is rejected, stop and ask the
+owner. Validate a change to the view with a real update: a dry run accepted a `UNION` that
+the update rejected.
 
 ## What the definition must not contain
 
 | Forbidden | Why |
 |---|---|
-| `GENERATED ... AS IDENTITY`, `row_number()` or `monotonically_increasing_id()` as the surrogate key | Principle VII (keys that can be reassigned); identity is not supported on materialized views |
-| `STREAM(...)`, `CREATE OR REFRESH STREAMING TABLE` | Principle V: gold full-scan result |
+| `GENERATED ... AS IDENTITY`, `row_number()` or `monotonically_increasing_id()` as the surrogate key | not supported on `AUTO CDC` targets; Principle VII (keys that can be reassigned) |
+| `CREATE OR REFRESH MATERIALIZED VIEW` | owner's direction, 2026-11-04 |
+| `CONSTRAINT ... EXPECT` | the spec requests none (FR-008; constitution v2.0.0) |
+| `UNION` of the silver stream with literal rows | Spark rejects it when the update runs |
 | a read of `workspace.bronze.*` or of another dimension | Principles I and VII |
 | `ON VIOLATION DROP ROW`; silver's quality rules | spec: the dimension does not re-apply silver's rules |
 | `dt_carga` | the constitution's name is `data_carga` |
@@ -54,5 +33,6 @@ The shape above is binding; the exact layout and comments are the implementer's.
 
 - One row per `usuario_uuid`; `sk_usuario` and `usuario_uuid` unique and never null.
 - `sk_usuario` never changes for a given user, whatever is refreshed.
-- `sk_usuario = -1` is "unknown", `-2` is "not applicable"; both always exist.
+- `sk_usuario = -1` is "unknown", `-2` is "not applicable"; both always exist. No other key
+  is negative.
 - Attributes equal silver's latest row for the user.

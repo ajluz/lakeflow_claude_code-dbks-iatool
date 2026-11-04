@@ -1,59 +1,61 @@
 # Implementation Plan: Gold User Dimension
 
-**Branch**: `009-gold-dim-usuario` | **Date**: 2026-10-28 | **Spec**: [spec.md](spec.md)
+**Branch**: `009-gold-dim-usuario` | **Date**: 2026-10-28, revised 2026-11-04 | **Spec**: [spec.md](spec.md)
 
 **Input**: Feature specification from `/specs/009-gold-dim-usuario/spec.md`
 
-**Note**: This template is filled in by the `/speckit-plan` command; its definition describes the execution workflow.
+**Note**: Revised on 2026-11-04 by the owner's direction to rebuild the dimension with
+`AUTO CDC` (tasks.md, Phase 9). It replaces the materialized view of the first version.
 
 ## Summary
 
 Build `workspace.gold.dim_usuario`, the first gold dataset: one row per silver user plus
 an "unknown" and a "not applicable" member, SCD type 1, with a surrogate key that can
-never be reassigned. The spec's three constitution-driven points (`data_carga` instead of
-`dt_carga`, the two members, stable keys) are taken as accepted: the owner moved to
-planning after they were presented on 2026-10-28.
+never be reassigned.
 
-Technical approach, from [research.md](research.md): one SQL file,
-`src/pipeline/03_gold/01_dim_usuario.sql`, defining a **materialized view** that reads
-`workspace.silver.tb_usuario` in batch, keeps the latest row per `usuario_uuid`, computes
-`sk_usuario = xxhash64(usuario_uuid)`, and appends the two members with fixed keys `-1`
-and `-2`. Two `FAIL UPDATE` expectations guard the keys.
+Technical approach, from [research.md](research.md): a temporary view reads
+`STREAM(workspace.silver.tb_usuario)`, computes
+`sk_usuario = xxhash64(usuario_uuid) & 9223372036854775807`, and makes each silver row emit
+the user and the two members, with fixed keys `-1` and `-2`. An `AUTO CDC` flow applies it
+to a streaming table, keyed on `usuario_uuid` and sequenced by silver's `data_carga`, which
+reduces the repeated members to one row each. The dimension declares no expectations.
 
 ## Technical Context
 
 **Language/Version**: SQL for Lakeflow Spark Declarative Pipelines, current syntax
-(`CREATE OR REFRESH MATERIALIZED VIEW`, `CONSTRAINT ... EXPECT ... ON VIOLATION FAIL UPDATE`)
+(`CREATE OR REFRESH STREAMING TABLE`, `CREATE TEMPORARY VIEW`, `CREATE FLOW ... AS AUTO CDC
+INTO`)
 
-**Primary Dependencies**: Lakeflow Spark Declarative Pipelines (serverless); Unity
-Catalog; Databricks CLI v1.11.0
+**Primary Dependencies**: Lakeflow Spark Declarative Pipelines (serverless, channel
+`CURRENT`); Unity Catalog; Databricks CLI
 
 **Storage**:
-- reads `workspace.silver.tb_usuario` (feature 006), batch;
+- reads `workspace.silver.tb_usuario` (feature 006), streaming;
 - writes `workspace.gold.dim_usuario`.
 
-**Testing**: dry run, then [quickstart.md](quickstart.md), including a key-stability check
+**Testing**: dry run, then [quickstart.md](quickstart.md), including a stability check
 across two updates. No test framework
 
 **Target Platform**: Databricks Free Edition, pipeline `lakeflow_dataslight_dev`
-(`8d51ac7a-02be-4ce2-8afd-f4f263e448dd`), profile `databricks-free`. The pipeline's
-source glob is `.../src/pipeline/**`, so `03_gold/` needs no settings change
+(`8d51ac7a-02be-4ce2-8afd-f4f263e448dd`), profile `databricks-free`, triggered mode. The
+pipeline's source glob is `.../src/pipeline/**`, so `03_gold/` needs no settings change
 
 **Project Type**: data pipeline (project code under `src/pipeline/`)
 
-**Performance Goals**: 941,236 rows; the view is recomputed in full on each update
-(`current_timestamp()` and the window prevent incremental refresh), which is small at this
-volume
+**Performance Goals**: 941,236 rows on the first load, from about 2.8 million rows the view
+emits (three per silver row); later updates process only new silver rows
 
 **Constraints**:
-- Principle V: a gold full-scan result is a materialized view read without `STREAM`;
+- Principle V: a gold dataset fed by a change feed is a streaming table;
 - Principle VII: a single-column surrogate key that keeps its value across updates; a
   mechanism that can reassign keys MUST NOT be used;
-- no refresh of existing tables; `dim_usuario` is new;
+- identity columns are not supported on `AUTO CDC` targets;
+- changing the existing materialized view to a streaming table requires dropping it, with
+  the owner's explicit approval;
 - Free Edition quota: about 4 minutes between updates.
 
-**Scale/Scope**: 1 SQL file (first file of `03_gold/`); 2 expectations; 4 documentation
-updates; 941,234 + 2 = 941,236 rows on 2026-10-28.
+**Scale/Scope**: 2 SQL files in `03_gold/`; 1 flow; no expectations; 4 documentation
+updates; 941,234 + 2 = 941,236 rows.
 
 Nothing is marked NEEDS CLARIFICATION.
 
@@ -61,26 +63,24 @@ Nothing is marked NEEDS CLARIFICATION.
 
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-Checked against constitution v1.11.0.
+Checked against constitution v2.0.0.
 
 | Principle / section | Applies | Result | Notes |
 |---|---|---|---|
-| I. Medallion Architecture | Yes | PASS | Gold reads silver only (`tb_usuario`). No boundary view: silver tables carry no bronze lineage column, and the diagram draws `S3 → G1` directly (research, Decision 6). `quality = gold`. No fact yet, so reconciliation is through the members. |
-| II. SQL-Only Declarative Pipelines | Yes | PASS | One `.sql` file, `CREATE OR REFRESH MATERIALIZED VIEW`. |
-| III. Data Quality Through Expectations | Yes | PASS | `check_sk_usuario` and `check_usuario_uuid` (`IS NOT NULL`) with `ON VIOLATION FAIL UPDATE`: the case Principle III reserves for a null key in a gold dimension. |
+| I. Medallion Architecture | Yes | PASS | Gold reads silver only (`tb_usuario`). No boundary view: silver tables carry no bronze lineage column (research, Decision 6). `quality = gold`. |
+| II. SQL-Only Declarative Pipelines | Yes | PASS | Two `.sql` files in the pipeline, with no imperative statement. |
+| III. Data Quality Expectations on Request | Yes | PASS | The spec requests no expectation, so none is declared (FR-008). Keys are verified by query after a load. |
 | IV. Quarantine, Never Silently Discard | Yes | PASS | No rule drops a row. The dimension does not re-apply silver's rules. |
-| V. Dataset Types and Flows | Yes | PASS | Gold full-scan result as a materialized view, batch read. `UNION ALL` combines the silver rows with two literal rows, not streaming sources. No layout clause. File `01_dim_usuario.sql` in `03_gold/`. |
+| V. Dataset Types and Flows | Yes | **DEVIATION** | Streaming table with `AUTO CDC`, SCD type 1 declared. No delete condition: see Complexity Tracking. No layout clause, and no `UNION` of a stream. Files `01_vw_gold_dim_usuario_tb_usuario.sql` and `02_dim_usuario.sql`. |
 | VI. Record Source and Hash Keys | Yes | PASS | `usuario_uuid` is carried unchanged; `origem` is carried from silver. |
-| VII. Kimball Dimensional Modeling | Yes | PASS | Denormalized, references no dimension. Surrogate key `sk_usuario`, single column, `xxhash64` of the business key: deterministic, so it cannot change on refresh (Decision 2). Business key `usuario_uuid` retained. **SCD type 1** declared. "Unknown" (`-1`) and "not applicable" (`-2`) members. Grain: one user. |
-| Constraints | Yes | PASS | Three-level name `workspace.gold.dim_usuario`; `dim_` prefix; `sk_`, `_uuid`, `origem`, `data_carga` (the request's `dt_carga` follows the constitution's name); `--profile databricks-free`; no AI Functions. New project-code folder `src/pipeline/03_gold/`, named here. |
-| Workflow: target graph | Yes | PASS | The diagram shows `S3 (tb_usuario) → G1 (dim_usuario)`. |
-| Workflow: skill consulted | Yes | PASS | `databricks-pipelines`: `materialized-view-sql.md` (batch read, expectations, no identity on recompute), `expectations-sql.md` (`FAIL UPDATE`). |
-| Workflow: completion gates | Yes | PLANNED | 1: dry run and update. 2: two expectations in the data quality tab. 3: rows = silver users + 2. 4: n/a (no silver change). 5: no fact. 6: documentation. |
-| Workflow: full refresh, table drop | Yes | PASS | New dataset only. |
+| VII. Kimball Dimensional Modeling | Yes | PASS | Denormalized, references no dimension. Surrogate key `sk_usuario`, single column, deterministic from the business key, so it cannot change on refresh (Decision 2). Business key `usuario_uuid` retained. **SCD type 1** declared. "Unknown" (`-1`) and "not applicable" (`-2`) members. Grain: one user. |
+| Constraints | Yes | PASS | Three-level name; `dim_` prefix; `sk_`, `_uuid`, `origem`, `data_carga`; flow named `gold_dim_usuario_tb_usuario_flow`; `--profile databricks-free`; no AI Functions. |
+| Workflow: target graph | Yes | **DEVIATION** | The diagram shows `S3 (tb_usuario) → G1 (dim_usuario)`, without the flow view: see Complexity Tracking. |
+| Workflow: skill consulted | Yes | PASS | `databricks-pipelines`: `auto-cdc-sql.md`, `streaming-table-sql.md`. The Databricks `AUTO CDC` and limitations pages, for snapshot flows and identity columns. |
+| Workflow: completion gates | Yes | DONE | 1: dry run and update. 2: no expectation declared, so nothing to show. 3: rows = silver users + 2. 4: n/a (no silver change). 5: no fact. 6: documentation. |
+| Workflow: full refresh, table drop | Yes | DONE | The owner approved dropping the earlier materialized view (T025). No full refresh was run. |
 
-**Gate result (pre-research)**: PASS, no deviations.
-
-**Gate result (post-design)**: PASS, no deviations.
+**Gate result (post-design, 2026-11-04)**: PASS, with the two deviations recorded below.
 
 ## Project Structure
 
@@ -107,34 +107,41 @@ src/
     ├── 01_bronze/ …                 # unchanged
     ├── 02_silver/ …                 # unchanged
     └── 03_gold/
-        └── 01_dim_usuario.sql       # NEW: materialized view, 2 FAIL UPDATE expectations
+        ├── 01_vw_gold_dim_usuario_tb_usuario.sql   # NEW: flow view, computes the key
+        └── 02_dim_usuario.sql                      # NEW: streaming table, 1 flow
 
 doc/
 ├── pipeline-reference.md   # CHANGED: ### dim_usuario as built; intro
-├── architecture.md         # CHANGED: features table (materialized view; deterministic surrogate key)
-├── README.md               # CHANGED: layout adds 03_gold/, dataset count adds gold
-└── known-issues.md         # CHANGED: identity-key item no longer applies to dim_usuario
+├── architecture.md         # CHANGED: features table
+├── README.md               # CHANGED: layout and dataset count
+└── known-issues.md         # CHANGED: identity-key item
 ```
 
-**Structure Decision**: `src/pipeline/03_gold/` is the gold zone folder the constitution's
-layout names; `01_dim_usuario.sql` is its first file, in the diagram's reading order
-(`G1`). The pipeline's glob already covers it.
+`src/pipeline/03_gold/01_dim_usuario.sql`, the first version's materialized view, is
+removed from the repository and from the workspace.
+
+**Structure Decision**: Principle V places a flow view in its own file, numbered just
+before the target's file. The pipeline's glob already covers both.
 
 ## Design Notes for Implementation
 
-- **Silver rows**: `SELECT ... FROM workspace.silver.tb_usuario QUALIFY row_number() OVER
-  (PARTITION BY usuario_uuid ORDER BY data_carga DESC) = 1`, so the dimension is SCD type 1
-  even if silver ever delivers a key twice.
-- **Members**: two literal rows joined by `UNION ALL`, with every column typed as in the
-  data model (`CAST(NULL AS INT)` for the age).
-- **The target declares its two constraints only**, no column list; the select list fixes
-  the column order of the data model.
-- **Header comment in Portuguese**: grain, SCD type 1, why the surrogate key is a hash of
-  the business key, the two members and their keys, and that facts resolve `sk_usuario`
-  by joining on `usuario_uuid` and fall back to `-1`.
-- **Quota**: one upload, one dry run, one update, then a second update for the
-  key-stability check.
+- **Flow view**: computes `sk_usuario` and the gold `data_carga`, and renames silver's
+  `data_carga` to `data_carga_silver`, because a flow cannot compute columns and the
+  sequence column must not reach the target. Each silver row emits three rows through
+  `explode(array(named_struct(...), ...))`: the user and the two members, whose sequence is
+  fixed at `TIMESTAMP'1900-01-01'` (research, Decision 8).
+- **Users flow**: `KEYS (usuario_uuid)`, `SEQUENCE BY data_carga_silver`, `COLUMNS * EXCEPT
+  (data_carga_silver)`, `STORED AS SCD TYPE 1`.
+- **The target declares its columns** to fix the data model's column order.
+- **Header comments in Portuguese**: grain, SCD type 1, how the key is computed and why it
+  is not an identity column, the two members and their keys, and that facts resolve
+  `sk_usuario` by joining on `usuario_uuid` and fall back to `-1`.
+- **Quota**: one upload, one dry run, one update, then a second update for the stability
+  check.
 
 ## Complexity Tracking
 
-No violations to justify.
+| Deviation | Why it is needed | Simpler alternative rejected |
+|---|---|---|
+| Principle V: no delete condition on the `AUTO CDC` flow | `silver.tb_usuario` is append-only and delivers no delete event, so no condition can be true | `APPLY AS DELETE WHEN false`: satisfies the wording and documents nothing |
+| Workflow: a flow view the diagram does not draw | An `AUTO CDC` flow reads only a named source and cannot compute columns, and the key, the gold `data_carga` and the members must be produced somewhere | Computing the key in silver: it would change `silver.tb_usuario`, outside this feature's scope, and a surrogate key belongs to the dimension |

@@ -1,6 +1,6 @@
 # Quickstart: Validate the User Dimension
 
-**Feature**: [spec.md](spec.md) | **Date**: 2026-10-28
+**Feature**: [spec.md](spec.md) | **Date**: 2026-10-28, revised 2026-11-04
 
 Shapes are in [data-model.md](data-model.md) and
 [contracts/gold-dim-usuario.md](contracts/gold-dim-usuario.md). Every CLI command takes
@@ -8,7 +8,9 @@ Shapes are in [data-model.md](data-model.md) and
 
 ## Prerequisites
 
-- `src/pipeline/03_gold/01_dim_usuario.sql` exists.
+- `src/pipeline/03_gold/01_vw_gold_dim_usuario_tb_usuario.sql` and `02_dim_usuario.sql`
+  exist, and `01_dim_usuario.sql` does not.
+- The owner approved dropping the earlier materialized view.
 - Do not run the generators: the course demo must reach the talk in its initial state
   (feature 008).
 - **Free Edition**: stop the SQL warehouse (`databricks warehouses stop f796ffb64302b6ba`)
@@ -18,19 +20,21 @@ Shapes are in [data-model.md](data-model.md) and
 
 ```sql
 SELECT count(*) AS usuarios, count(DISTINCT usuario_uuid) AS chaves,
-       count(DISTINCT xxhash64(usuario_uuid)) AS sk_distintas
+       count(DISTINCT xxhash64(usuario_uuid) & 9223372036854775807) AS sk_distintas,
+       count_if(data_carga IS NULL) AS sequencia_nula
 FROM workspace.silver.tb_usuario;
 ```
 
-Expected on 2026-10-28: 941,234, 941,234, 941,234 (no hash collision).
+Expected: 941,234, 941,234, 941,234 (no hash collision), and 0 null sequence values.
 
 ## 2. Upload, dry run, run
 
 | Step | Command | Expected |
 |---|---|---|
-| Upload | `databricks workspace import-dir src/pipeline /Workspace/Users/arthur.luz@dataslight.com.br/lakeflow_dev/src/pipeline --overwrite --profile databricks-free` | `03_gold/` lists `01_dim_usuario.sql` as `FILE` |
+| Remove the old file | `databricks workspace delete /Workspace/Users/arthur.luz@dataslight.com.br/lakeflow_dev/src/pipeline/03_gold/01_dim_usuario.sql --profile databricks-free` | `import-dir` does not delete it, and two files must not define one table |
+| Upload | `databricks workspace import-dir src/pipeline /Workspace/Users/arthur.luz@dataslight.com.br/lakeflow_dev/src/pipeline --overwrite --profile databricks-free` | `03_gold/` lists the two new files as `FILE` |
 | Dry run | `databricks pipelines start-update <pipeline_id> --validate-only --profile databricks-free` | `COMPLETED`; `workspace.gold.dim_usuario` defined |
-| Run | `databricks pipelines start-update <pipeline_id> --profile databricks-free` | `COMPLETED`, no failed flow |
+| Run | `databricks pipelines start-update <pipeline_id> --profile databricks-free` | `COMPLETED`, no failed flow. A completed dry run does not guarantee this |
 
 ## 3. Contents of `dim_usuario`
 
@@ -38,10 +42,11 @@ Expected on 2026-10-28: 941,234, 941,234, 941,234 (no hash collision).
 SELECT count(*) AS linhas,
        count(DISTINCT sk_usuario) AS sk, count(DISTINCT usuario_uuid) AS bk,
        count_if(sk_usuario IS NULL OR usuario_uuid IS NULL) AS chave_vazia,
-       count_if(sk_usuario IN (-1, -2)) AS membros,
+       count_if(sk_usuario < 0) AS membros,
        count_if(origem = 'API') AS api, count_if(origem = 'ARQUIVO') AS arquivo
 FROM workspace.gold.dim_usuario;
 
+-- Members: the only rows with a negative key
 SELECT * FROM workspace.gold.dim_usuario WHERE sk_usuario < 0 ORDER BY sk_usuario DESC;
 
 -- Attributes equal silver's
@@ -52,7 +57,7 @@ WHERE NOT (s.nome_usuario <=> d.nome_usuario AND s.email_usuario <=> d.email_usu
        AND s.idade_usuario <=> d.idade_usuario AND s.sexo_usuario <=> d.sexo_usuario
        AND s.estado_usuario <=> d.estado_usuario AND s.profissao_usuario <=> d.profissao_usuario
        AND s.empresa_usuario <=> d.empresa_usuario AND s.origem <=> d.origem
-       AND d.sk_usuario = xxhash64(s.usuario_uuid));
+       AND d.sk_usuario = (xxhash64(s.usuario_uuid) & 9223372036854775807));
 
 -- Users of sales without a dimension row (resolve to -1 in the fact)
 SELECT count(DISTINCT v.usuario_uuid) AS sem_dimensao
@@ -75,18 +80,19 @@ Expected:
 
 ## 4. Expectations
 
-Feature 004's quickstart step 4 queries, for the update of step 2: `check_sk_usuario` and
-`check_usuario_uuid` each failed 0, passed 941,236.
+None: the dimension declares no expectations (FR-008). Step 3's `chave_vazia`, `sk` and `bk`
+verify the keys.
 
 ## 5. Key stability
 
 Before the second update, save a sample:
 
 ```sql
-SELECT usuario_uuid, sk_usuario FROM workspace.gold.dim_usuario
-WHERE sk_usuario IN (-1, -2) OR usuario_uuid IN (
+SELECT usuario_uuid, sk_usuario, data_carga FROM workspace.gold.dim_usuario
+WHERE sk_usuario < 0 OR usuario_uuid IN (
   SELECT usuario_uuid FROM workspace.silver.tb_usuario ORDER BY usuario_uuid LIMIT 5);
 ```
 
-Run another update (no new data). Run the same query: every pair is identical, and
-`data_carga` is later (the view was recomputed).
+Run another update (no new data). Run the same query: every row is identical, `data_carga`
+included (`AUTO CDC` rewrites nothing when no silver row arrives), and the row count is
+still 941,236.

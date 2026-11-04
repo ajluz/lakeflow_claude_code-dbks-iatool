@@ -13,7 +13,16 @@
 ### Session 2026-10-28
 
 - Q: Should the dimension carry silver's `data_carga`, or a load time of its own? → A: Not silver's. Silver's `data_carga` is not a column of the dimension; the dimension has its own `data_carga`, the time the row entered the gold load job (owner).
-- Q: When a user who is already in the dimension is processed again by a later pipeline update, should their `data_carga` change to that update's time, or keep the time they first entered the dimension? → A: A. It changes: every row gets the time of the latest update that rebuilt it, so `data_carga` shows when the dimension was last refreshed.
+- Q: When a user who is already in the dimension is processed again by a later pipeline update, should their `data_carga` change to that update's time, or keep the time they first entered the dimension? → A: A. It changes: every row gets the time of the latest update that rebuilt it, so `data_carga` shows when the dimension was last refreshed. *(Superseded on 2026-11-04, below.)*
+
+### Session 2026-11-04
+
+- Q: Should the dimension stay a materialized view? → A: No. The owner directed that it be rebuilt as a streaming table fed by an `AUTO CDC` flow stored as SCD type 1.
+- Q: The owner asked for an identity surrogate key. Identity columns are not supported on `AUTO CDC` targets, so how does the dimension get its key? → A: A deterministic key computed before the flow, `xxhash64(usuario_uuid) & 9223372036854775807`. The owner asked for the best solution given that limitation, and proceeded with this one. Real keys are non-negative, so negative keys mean only the two members.
+- Q: `AUTO CDC` rewrites only the rows that change, so what does `data_carga` mean now? → A: The time gold last wrote the row. It does not move on an update with no new data.
+- Q: Should the dimension declare expectations? → A: No. The owner amended the constitution to v2.0.0, under which an expectation exists only when a spec requests it, and this spec does not request any.
+- Q: How do the members get in? → A: Through the flow view. The owner asked for a `UNION ALL` of the members in the view; Spark rejects a union of a stream and literal rows, so, as the owner directed for that case, the view generates them from the silver stream.
+- Q: The request said "all dimensions". Which does this feature cover? → A: `dim_usuario` only. `dim_curso` and `dim_codigos` are decided in their own features.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -97,8 +106,11 @@ each recognizable by its attributes.
   merge (feature 006), so today each key occurs once. If a key ever occurred twice, the
   dimension would still hold one row per key (SCD type 1: latest values win) and keep its
   surrogate key.
-- **A user disappears from silver.** Silver never deletes users. If one disappeared, the
-  dimension would no longer list it; facts would then resolve the user to "unknown".
+- **A user disappears from silver.** Silver never deletes users, and it delivers no delete
+  event. If a row were removed from silver, the dimension would keep the user's row with
+  its last values, because the `AUTO CDC` flow has no delete condition.
+- **Silver is empty.** The members come from the silver stream, so the dimension has none
+  until the first silver row arrives. Silver has rows today.
 - **Invalid email.** 29,599 users have an email without `@` (counted, not dropped, in
   silver). The dimension keeps them as they are; it does not re-apply silver's rules.
 - **Same name in two sources.** A site user and an employee with the same name are two
@@ -110,8 +122,8 @@ each recognizable by its attributes.
 
 ### Functional Requirements
 
-- **FR-001**: The feature MUST provide the gold dimension `workspace.gold.dim_usuario`,
-  built from `workspace.silver.tb_usuario`.
+- **FR-001**: The feature MUST provide the gold dimension `workspace.gold.dim_usuario`, a
+  streaming table fed from `workspace.silver.tb_usuario` by an `AUTO CDC` flow.
 - **FR-002**: The dimension MUST have exactly these columns:
 
   | Column | Type | Meaning |
@@ -126,23 +138,25 @@ each recognizable by its attributes.
   | `profissao_usuario` | STRING | profession |
   | `empresa_usuario` | STRING | company; empty for site users |
   | `origem` | STRING | record source (`API`, `ARQUIVO`) |
-  | `data_carga` | TIMESTAMP | time of the latest gold load job that rebuilt the row; never silver's `data_carga` |
+  | `data_carga` | TIMESTAMP | time gold last wrote the row; never silver's `data_carga` |
 
 - **FR-003**: The dimension MUST hold one row per `usuario_uuid` of silver, plus the two
   members of FR-007. Its grain is one user.
-- **FR-004**: The dimension MUST be SCD type 1: a user's attributes are the latest values
-  in silver, and no history is kept.
+- **FR-004**: The dimension MUST be SCD type 1, applied by `AUTO CDC ... STORED AS SCD TYPE
+  1`, keyed on `usuario_uuid` and sequenced by silver's `data_carga`: a user's attributes
+  are the latest values in silver, and no history is kept.
 - **FR-005**: `sk_usuario` MUST be a single column, unique, never empty, and MUST keep
   its value for a given user across every pipeline update, refresh included. A mechanism
-  that can reassign keys when the dimension is recomputed MUST NOT be used.
+  that can reassign keys when the dimension is recomputed MUST NOT be used. Real users'
+  keys MUST be non-negative, so that a negative key always means a member of FR-007.
 - **FR-006**: The dimension MUST retain `usuario_uuid` as its business key, so that
   facts resolve `sk_usuario` by joining on it.
 - **FR-007**: The dimension MUST contain two members with fixed surrogate keys and fixed
   business keys: "unknown" (`Desconhecido`) and "not applicable" (`Não se aplica`). Their
   descriptive text attributes carry that label; their numeric attribute is empty.
-- **FR-008**: The dimension MUST declare that `sk_usuario` and `usuario_uuid` are never
-  empty, and an empty one MUST stop the update: an empty key in a gold dimension makes
-  downstream data wrong (constitution, Principle III).
+- **FR-008**: The dimension MUST NOT declare expectations (owner, 2026-11-04; constitution
+  v2.0.0, Principle III). That `sk_usuario` and `usuario_uuid` are never empty MUST be
+  verified by query after a load. An empty key does not stop the update.
 - **FR-009**: The dimension MUST NOT reference another dimension, and MUST NOT carry the
   silver lineage of other tables.
 - **FR-010**: The dimension MUST carry `quality` = `gold`.
@@ -168,9 +182,9 @@ each recognizable by its attributes.
 - **SC-002**: 0 rows have an empty `sk_usuario` or `usuario_uuid`; no two rows share
   either.
 - **SC-003**: For 100% of silver users, the dimension's attributes equal silver's.
-- **SC-004**: After a second update, 100% of previously recorded surrogate keys are
-  unchanged, including the two members', and 100% of rows carry a `data_carga` later than
-  before that update.
+- **SC-004**: After a second update with no new data, 100% of previously recorded
+  surrogate keys are unchanged, including the two members', and 100% of rows keep the same
+  `data_carga`.
 - **SC-005**: Exactly 1 "unknown" row and 1 "not applicable" row exist.
 - **SC-006**: 100% of `usuario_uuid` values referenced by silver sales either have a row
   or, when absent (4,362 on 2026-10-28), can be resolved to the "unknown" member.
@@ -180,21 +194,22 @@ each recognizable by its attributes.
 - **The load-time column is `data_carga`.** The request names it `dt_carga`. The
   constitution fixes the load timestamp's name as `data_carga` across the project
   (Platform and Technology Constraints, Key and lineage columns), and silver already uses
-  it. It holds the time of the latest gold load job that rebuilt the row (owner,
-  2026-10-28): every update sets it on every row. Silver's `data_carga` is not a column of
-  the dimension; it is only used to pick a user's latest silver row (FR-004).
+  it. It holds the time gold last wrote the row (owner, 2026-11-04). Silver's `data_carga`
+  is not a column of the dimension; it only sequences the `AUTO CDC` flow (FR-004).
 - **"No SCD type 2"** means SCD type 1: one current row per user, overwritten when silver
   changes. Silver users are never updated today, so the type matters only for the future.
 - **Source**: `silver.tb_usuario`, as the diagram shows (`S3 → G1`). The dimension does
   not read bronze.
 - **Default members** are required by the constitution (Principle VII) even though the
   request does not list them. Their exact key values are a planning decision; they must
-  not collide with real keys.
+  not collide with real keys. They are generated in the flow view from the silver stream,
+  so they appear with the first silver row that reaches gold.
 - **Stable surrogate keys** are required by the constitution (Principle VII). The earlier
   pipeline used an identity column on a materialized view, which Databricks may
-  recompute; `doc/known-issues.md` lists it. Planning chooses a mechanism that cannot
-  reassign keys.
+  recompute; `doc/known-issues.md` lists it. Identity columns are not supported on `AUTO
+  CDC` targets either, so the key is a deterministic function of the business key.
 - The dimension does not re-apply silver's quality rules; silver has already decided
   which users exist.
-- `fato_venda`, `obt_acesso` and the other dimensions are out of scope.
+- `fato_venda`, `obt_acesso`, `dim_curso`, `dim_codigos` and the other dimensions are out
+  of scope.
 - All data is synthetic.

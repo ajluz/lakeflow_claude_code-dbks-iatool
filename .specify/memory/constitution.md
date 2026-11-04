@@ -1,38 +1,39 @@
 <!--
 SYNC IMPACT REPORT (scratch material for review; remove before committing)
 
-Version change: 1.10.0 → 1.11.0
-Bump rationale: MINOR. Principle I gains a bounded exception: the course feed's boundary
-view is named `vw_bronze_tb_curso` and may convert the price and add `origem` and
-`data_carga`. The `dim_curso` exception and the naming rule point to it. Nothing is
-removed.
-Owner, 2026-10-28 (feature 008, clarification): chose the diagram's name,
-`vw_bronze_tb_curso`, "with a constitution amendment to allow it". The extra columns
-follow from feature 008's plan: an `AUTO CDC` flow reads only a named view, so it cannot
-compute columns.
+Version change: 1.11.0 → 2.0.0
+Bump rationale: MAJOR. Principle III is redefined in a backward-incompatible way: it was a
+non-negotiable obligation to express every quality rule as an expectation, and it now
+allows an expectation only when the feature's spec explicitly requests it.
+Owner, 2026-11-04 (feature 009): "remove the obligation of having an expectation rule. it
+need to be explicitly requested by the spec specify".
 
-Modified principles (titles unchanged):
-- I. Medallion Architecture: new bullet "Exception: the course feed's boundary view".
-  The `dim_curso` exception now reads `vw_bronze_tb_curso` instead of
-  `vw_bronze_dados_database`.
+Modified principles:
+- III. Data Quality Through Expectations (NON-NEGOTIABLE) → III. Data Quality Expectations
+  on Request. New request rule; "every silver table declares one" removed; NON-NEGOTIABLE
+  removed. The rules for how an expectation is written are unchanged.
+- IV. Quarantine, Never Silently Discard: warn expectations on a validation table are now
+  required only when requested. The flag and quarantine routing remain mandatory.
+- VI. Record Source and Hash Keys in Silver: the not-null hash key is verified by query; its
+  expectation is required only when requested. The `tb_curso` exception's wording follows.
 
 Modified sections:
-- Platform and Technology Constraints, Naming: boundary views follow
-  `vw_<source zone>_<dataset>`, except `vw_bronze_tb_curso`.
+- Platform and Technology Constraints, AI tools: "a bare WHERE in place of a requested
+  expectation".
 
 Added sections: none
 Removed sections: none
 
 Dependent templates: not modified by this command; they read the constitution at runtime.
 
-Affected files: none. No file defines a view over `bronze.dados_database` yet. Feature 008
-(`specs/008-silver-tb-curso/plan.md`) recorded the two deviations in Complexity Tracking;
-under v1.11.0 they are no longer deviations.
+Affected files: no code becomes non-compliant. Expectations already declared in
+`src/pipeline/02_silver/` stay until a spec removes them.
 
 Follow-up TODOs:
-- Feature 008 plan: re-check Principle I and Constraints against v1.11.0 (both PASS) and
-  empty Complexity Tracking.
-- Commit the v1.10.0 and v1.11.0 amendments (remove this report first).
+- Feature 009: FR-008, SC-002's wording, plan, research Decision 7, data model, contract,
+  quickstart and tasks still describe the two FAIL UPDATE expectations on `dim_usuario`;
+  update them when the owner's deferred request is implemented.
+- Commit this amendment (remove this report first).
 - No deferred placeholders.
 -->
 
@@ -128,16 +129,18 @@ written in SQL.
 **Rationale**: one language and one execution model keep the project teachable and
 reviewable, and let the platform own ordering, retries, incremental state, and lineage.
 
-### III. Data Quality Through Expectations (NON-NEGOTIABLE)
+### III. Data Quality Expectations on Request
 
-Every data quality rule is a named Databricks expectation, so that its outcome is measured
-by the pipeline.
+A dataset declares an expectation only when its feature's specification explicitly requests
+it. A requested rule is a named Databricks expectation, so that its outcome is measured by
+the pipeline.
 
-- A quality rule MUST be declared as `CONSTRAINT <name> EXPECT (<condition>)` on a
+- **Request.** No dataset is required to declare an expectation. An expectation MUST NOT be
+  added unless the feature's `spec.md` explicitly requests it; a plan or task list cannot
+  introduce one. Expectations already in the code stay until a spec removes them.
+- A requested rule MUST be declared as `CONSTRAINT <name> EXPECT (<condition>)` on a
   streaming table or materialized view. A bare `WHERE` filter MUST NOT be the only
-  expression of a quality rule, because it leaves no metric.
-- Every silver table MUST declare at least one expectation. A silver table with none MUST
-  state why in its plan.
+  expression of a requested rule, because it leaves no metric.
 - Each expectation MUST choose its action deliberately:
   - **Warn** (no `ON VIOLATION`): measure a rule without removing rows.
   - **`ON VIOLATION DROP ROW`**: remove rows, either routed to quarantine by the same
@@ -154,8 +157,8 @@ by the pipeline.
   downstream of the view.
 
 **Rationale**: expectations publish pass and fail counts to the pipeline's data quality tab
-and event log. A rule that is not an expectation is invisible, and an invisible rule
-cannot be trusted or audited.
+and event log, but they also constrain how a dataset can be built. Making each one an
+explicit decision of the spec keeps the ones that matter and avoids the rest.
 
 ### IV. Quarantine, Never Silently Discard
 
@@ -165,9 +168,9 @@ replayed.
 - Validation of a source happens once, at the bronze-to-silver boundary, in a private
   validation table that reads the source's boundary view (Principle I) and adds a Boolean
   flag column (`fl_registro_invalido`) computed from the rejection rules.
-- The same rules MUST also be declared on that validation table as warn expectations, so
-  that every rejection is counted. The flag and the expectations MUST encode the same
-  predicates; changing one without the other is a violation.
+- When the spec requests expectations on a validation table (Principle III), they MUST be
+  warn expectations, so that every rejection is counted. The flag and the expectations MUST
+  encode the same predicates; changing one without the other is a violation.
 - Flagged rows MUST be written to a quarantine streaming table in silver
   (`tb_quarentena`, or `tb_quarentena_<source>` when sources differ in shape). Conformed
   silver tables MUST read only rows where the flag is false.
@@ -275,10 +278,10 @@ hubs, links, and satellites are out of scope.
   computes a key already computed elsewhere MUST verify that the two join, for example
   that every user key in an access table exists in the user table. No shared view is
   required to hold the expression.
-- **Uniqueness.** A hash key MUST be unique within its table. Each conformed silver table
-  MUST declare an expectation that its hash key is not null, and uniqueness
-  (`count(*) = count(DISTINCT <entidade>_uuid)`) MUST be verified before a change is
-  accepted. A table that legitimately receives the same business key more than once MUST
+- **Uniqueness.** A hash key MUST be unique and not null within its table. Both MUST be
+  verified by query (`count(*) = count(DISTINCT <entidade>_uuid)`, and no null key) before a
+  change is accepted. A not-null expectation is declared only when the spec requests it
+  (Principle III). A table that legitimately receives the same business key more than once MUST
   either deduplicate on the hash key or apply `AUTO CDC` keyed on it.
 - **References.** A silver table refers to another entity by that entity's hash key, under
   the same column name.
@@ -287,7 +290,7 @@ hubs, links, and satellites are out of scope.
 - **Exception: `silver.tb_curso` does not derive a hash key.** The course catalog has a
   single source, the database change feed, and that feed already delivers the course
   identifier. No key needs to be unified across sources, so the hash key rules above
-  (derivation with `md5`, the composition rule, the not-null expectation, and the
+  (derivation with `md5`, the composition rule, the not-null check, and the
   uniqueness check) do not apply to this table. The exception is bounded as follows:
   - It applies only to `silver.tb_curso`. It ends if a second source of courses is added.
   - The table keeps the identifier delivered by the source, unchanged, as the `KEYS`
@@ -396,7 +399,7 @@ loss with an explicit "unknown".
   - **Databricks Assistant** MAY be used to write, explain and debug pipeline SQL, and to
     diagnose a failed update. Its output is a draft: a person reviews it against this
     constitution before it is committed. Generated code that uses legacy syntax
-    (Principle II), a bare `WHERE` in place of an expectation (Principle III), or a hash
+    (Principle II), a bare `WHERE` in place of a requested expectation (Principle III), or a hash
     key expression different from the one already in use (Principle VI) MUST be rewritten
     before use.
   - **Genie** MAY be used to explore data and to answer questions during development,
@@ -473,4 +476,4 @@ this repository.
   `databricks-pipelines` skill gives syntax and patterns. Both inform implementation;
   neither overrides this document.
 
-**Version**: 1.11.0 | **Ratified**: 2026-10-10 | **Last Amended**: 2026-10-28
+**Version**: 2.0.0 | **Ratified**: 2026-10-10 | **Last Amended**: 2026-11-04

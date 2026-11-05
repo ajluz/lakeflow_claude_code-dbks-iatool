@@ -6,8 +6,8 @@ that other notebooks load with `%run "./functions"`. It uses
 [dbldatagen](https://github.com/databrickslabs/dbldatagen), installed by the
 first cell.
 
-Running the notebook has three effects: it installs `dbldatagen`, defines the
-three generator functions below, and creates and fills `workspace.gold.dim_tempo`.
+Running the notebook has two effects: it installs `dbldatagen` and defines the
+three generator functions below.
 
 ## generate_api_data(number_rows, run_as_batch=False)
 
@@ -90,7 +90,6 @@ derive course keys from sales, which is what lets sales join to courses.
 
 ## dim_tempo
 
-The last cell runs `CREATE TABLE IF NOT EXISTS workspace.gold.dim_tempo` followed
-by an `INSERT` of one row per day from 2024-06-01 to 2026-12-31. Month and day
-names are generated in Portuguese. The table is a plain Delta table, referenced
-by the pipeline but not managed by it.
+The calendar is not generated here. It is created by the setup script
+[04_dim_tempo.sql](../explorations/setup/04_dim_tempo.sql); see
+[getting-started.md](getting-started.md#create-the-calendar-dimension).

@@ -37,14 +37,6 @@ Fixed in silver by feature 007 (2026-10-28):
 - the `acesso_uuid` mismatch for `unknown` access points: `tb_venda` uses `tb_acesso`'s
   expression.
 
-## dim_tempo is reloaded on every run
-
-The last cell of [functions.py](../explorations/functions.py#L514) creates
-`dim_tempo` with `IF NOT EXISTS` but then inserts unconditionally. Every
-`%run "./functions"` appends another full copy of the calendar. Since
-`fato_venda` and `obt_acesso` join on `data`, each extra copy multiplies their
-rows.
-
 ## dim_codigos is built from a cross join
 
 [03_dim_codigos.sql:17-18](../code_tips/03_gold/03_dim_codigos.sql#L17-L18)

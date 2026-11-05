@@ -52,8 +52,9 @@ lakeflow/
 │   │   ├── 01_schemas_verify.sql         Read-only verification report for the schemas
 │   │   ├── 02_landing_volume.sql         Creates the landing volume and applies the access rule
 │   │   ├── 02_landing_volume_verify.sql  Read-only verification report for the volume
-│   │   └── 03_pipeline_dev.json          Settings of the development pipeline
-│   ├── functions.py         Data generators + creation of gold.dim_tempo
+│   │   ├── 03_pipeline_dev.json          Settings of the development pipeline
+│   │   └── 04_dim_tempo.sql              Creates and fills the calendar dimension gold.dim_tempo
+│   ├── functions.py         Data generators
 │   ├── user_case.py         Walkthrough: case study, setup, queries per layer
 │   └── clean_up_env.ipynb   Drops tables and landing files
 ├── data/                    Local tooling state, no datasets
@@ -74,7 +75,7 @@ far; gold is not built yet.
 | Catalog / schemas | `workspace.bronze`, `workspace.silver`, `workspace.gold` |
 | Landing volume | `/Volumes/workspace/bronze/landing/{stream,files,database}` |
 | Pipeline datasets | 3 bronze streaming tables; in silver, 7 streaming views, 1 private streaming table and 5 streaming tables; in gold, 1 streaming view and 1 streaming table (plus `dim_tempo`, created outside the pipeline) |
-| Created outside the pipeline | `workspace.gold.dim_tempo` (by `functions.py`) |
+| Created outside the pipeline | `workspace.gold.dim_tempo` (by `explorations/setup/04_dim_tempo.sql`) |
 | Target environment | Databricks Free Edition (streaming simulated with `availableNow`) |
 
 Object names, column names and code comments are in Portuguese, as in the talk.

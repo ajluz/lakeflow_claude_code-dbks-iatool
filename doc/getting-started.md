@@ -44,6 +44,22 @@ report it prints must have no `FAIL` row; a clean run shows 6 `PASS` rows.
 
 The folders inside the volume, one per source, are created by the data generators.
 
+### Create the calendar dimension
+
+The calendar dimension `workspace.gold.dim_tempo` is created and filled by a third script.
+Run it after the schemas step, since it needs the `gold` schema:
+
+```bash
+databricks experimental aitools tools query explorations/setup/04_dim_tempo.sql --profile <profile>
+```
+
+It prints one summary row. A first run shows `linhas` 3654, `dias` 3652, `membros` 2,
+`primeiro_dia` 2021-01-01, `ultimo_dia` 2030-12-31 and `dias_repetidos` 0. It can be run
+again at any time: it only inserts days that are missing, so a second run changes nothing
+and every `sk_tempo` keeps its value. If the table already holds a repeated day, it stops
+with an error without changing anything; the table must then be dropped, with the owner's
+approval, and the script run again.
+
 ### Check the whole environment
 
 One command runs the read-only verification of both steps and prints one table. It needs
@@ -69,9 +85,7 @@ Import the repository into the workspace as a Git folder, or upload
 Open [explorations/user_case.py](../explorations/user_case.py) and run the
 **Setup** section.
 
-1. `%run "./functions"` installs `dbldatagen`, defines the generators and
-   creates `workspace.gold.dim_tempo`. Run it once per environment (see
-   [known-issues.md](known-issues.md#dim_tempo-is-reloaded-on-every-run)).
+1. `%run "./functions"` installs `dbldatagen` and defines the generators.
 2. In the next cell, the file and database generators are commented out. On a
    first run, uncomment them so all three sources have data:
 

@@ -102,7 +102,8 @@ flowchart LR
 ```
 
 Rounded nodes are temporary views, which exist only inside the pipeline.
-`dim_tempo` is a regular Delta table created outside the pipeline. Note that
+`dim_tempo` is a regular Delta table created outside the pipeline, by
+[04_dim_tempo.sql](../explorations/setup/04_dim_tempo.sql). Note that
 `dim_curso` reads the bronze change feed directly, not `silver.tb_curso`.
 
 The graph as rendered by the pipeline UI:

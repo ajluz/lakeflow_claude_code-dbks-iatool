@@ -334,8 +334,8 @@ Calendar dimension created by the last cell of
 ### dim_usuario
 
 [02_dim_usuario.sql](../src/pipeline/03_gold/02_dim_usuario.sql) — streaming table
-`workspace.gold.dim_usuario`, target of the `AUTO CDC` flow
-`gold_dim_usuario_tb_usuario_flow`. As built. Grain: one user. **SCD type 1**: key
+`workspace.gold.dim_usuario`, target of two `AUTO CDC` flows, one for users
+(`gold_dim_usuario_tb_usuario_flow`) and one for the members. As built. Grain: one user. **SCD type 1**: key
 `usuario_uuid`, sequence silver's `data_carga`, no history. Silver delivers no delete event,
 so the flow has no delete condition, and a user removed from silver keeps its row.
 
@@ -356,19 +356,19 @@ mask clears the sign bit, so **only the members have a negative key**, and `sk_u
 selects them.
 
 **Default members**: `-1` / `'-1'` "Desconhecido" (unknown) and `-2` / `'-2'` "Não se aplica"
-(not applicable). Spark rejects a `UNION` of a stream and literal rows, so each silver row
-emits three rows, the user and the two members, and the flow keeps one row per key: about 2.8
-million rows emitted on the first load for 941,236 kept. The members appear with the first
-silver row that reaches gold. Facts resolve `sk_usuario` by joining on `usuario_uuid`; they
-use `-1` when there is no match (4,362 sales users on 2026-11-04, whose sex failed silver's
-rule) and `-2` when the fact has no user by nature.
+(not applicable). A second flow, `gold_dim_usuario_membros_flow`, loads them once with `AUTO
+CDC ONCE ... FROM SNAPSHOT`. A snapshot treats absent keys as deleted at its version, so its
+`WITH VERSION` is fixed at 1900, older than every silver row: **do not remove it**. Facts
+resolve `sk_usuario` by joining on `usuario_uuid`; they use `-1` when there is no match (4,362
+sales users on 2026-11-04, whose sex failed silver's rule) and `-2` when the fact has no user
+by nature.
 
 **Expectations**: none, because the feature's spec requests none (constitution v2.0.0,
 Principle III). A null key does not stop an update, so keys are verified by query.
 
 On 2026-11-04: 941,236 rows (`API` 741,234, `ARQUIVO` 200,000, 2 members), every key unique
-and present, and every attribute equal to silver's. A second update with no new data left
-every key and `data_carga` unchanged.
+and present, and every attribute equal to silver's. A full refresh of this table left every
+key unchanged, and a later update with no new data left every key and `data_carga` unchanged.
 
 ### dim_curso
 

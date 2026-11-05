@@ -68,8 +68,7 @@ expensive at the volumes the generators produce.
   `dim_usuario` no longer has this issue: since feature 009 its key is
   `xxhash64(usuario_uuid)` with the sign bit cleared, which never changes for a user.
 - `dim_usuario` declares no expectations (feature 009, by the owner's decision), so a null key
-  would not stop an update. Its members are generated from the silver stream, so each silver
-  row emits three rows, and the dimension has no members while silver is empty.
+  would not stop an update.
 - The bronze filter in [user_case.py](../explorations/user_case.py) mixes
   `AND` and `OR` without parentheses, so `WHERE 1=1 AND a OR b OR c` does not
   group the way the comments suggest once more conditions are uncommented.

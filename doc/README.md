@@ -44,8 +44,8 @@ lakeflow/
 │       │   ├── 12_vw_bronze_tb_curso.sql     Course feed view: boundary + price as DECIMAL, origem, data_carga
 │       │   └── 13_tb_curso.sql               Course table: AUTO CDC SCD type 1 (key, sequence, delete)
 │       └── 03_gold/         Dimensional model: dimensions and facts
-│           ├── 01_vw_gold_dim_usuario_tb_usuario.sql  Flow view: stable hash surrogate key, unknown / not-applicable members
-│           └── 02_dim_usuario.sql        User dimension: AUTO CDC SCD type 1
+│           ├── 01_vw_gold_dim_usuario_tb_usuario.sql  Flow view: stable hash surrogate key
+│           └── 02_dim_usuario.sql        User dimension: AUTO CDC SCD type 1, unknown / not-applicable members
 ├── explorations/            Auxiliary code: setup, generators and notebooks
 │   ├── setup/               Environment preparation, run by hand in step order
 │   │   ├── 01_schemas.sql                Creates the schemas and applies the access rule

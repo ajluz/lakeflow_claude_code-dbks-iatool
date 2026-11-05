@@ -9,11 +9,12 @@
 | File | Dataset | Reads |
 |---|---|---|
 | `src/pipeline/03_gold/01_vw_gold_dim_usuario_tb_usuario.sql` | `vw_gold_dim_usuario_tb_usuario` (temporary view) | `workspace.silver.tb_usuario`, streaming |
-| `src/pipeline/03_gold/02_dim_usuario.sql` | `workspace.gold.dim_usuario` (streaming table) | the view |
+| `src/pipeline/03_gold/02_dim_usuario.sql` | `workspace.gold.dim_usuario` (streaming table) | the view, plus two literal member rows |
 
 The two files as built are the binding statements. If a change is rejected, stop and ask the
 owner. Validate a change to the view with a real update: a dry run accepted a `UNION` that
-the update rejected.
+the update rejected. The members flow's `WITH VERSION` is binding: without it, the users
+could be treated as deleted.
 
 ## What the definition must not contain
 

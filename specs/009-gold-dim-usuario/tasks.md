@@ -394,3 +394,91 @@ run), and key stability across a full refresh (not run; needs the owner's approv
 unchanged; `bronze.dados_database` still holds the three inserts; `silver.tb_usuario` 941,234.
 Uncommitted, including the constitution amendment, whose Sync Impact Report must be removed
 before committing.
+
+---
+
+## Phase 12: Convergence
+
+Owner direction, 2026-11-04: make feature 009 simpler. `AUTO CDC` stays, and these tasks
+supersede the members in the view of T035. The conventions at the top of this file still
+apply. The snapshot flow was rejected in T026 only because the target had expectations,
+which T033 removed.
+
+- [X] T036 Rewrite `spec.md`, `plan.md`, `research.md`, `data-model.md`, `contracts/gold-dim-usuario.md` and `quickstart.md` for the final design only, per owner direction 2026-11-04 and FR-007 (contradicts)
+  - `spec.md`: record the members' snapshot flow in the 2026-11-04 clarifications, and remove the "Silver is empty" edge case and the assumption that members appear with the first silver row.
+  - `plan.md`, `data-model.md`, the contract: one plain view, one streaming table, two flows; replace the explode notes and the about 2.8 million rows.
+  - `research.md`: reduce Decision 8 to the decision, why `WITH VERSION` must stay, and one line for each rejected attempt, including the `UNION ALL` a dry run did not catch.
+  - `quickstart.md`: remove the one-time steps that are already done (deleting the old file, approving the drop).
+- [X] T037 Replace `src/pipeline/03_gold/01_vw_gold_dim_usuario_tb_usuario.sql` with a plain view and a short Portuguese header comment, per owner direction 2026-11-04 (contradicts)
+  ```sql
+  CREATE TEMPORARY VIEW vw_gold_dim_usuario_tb_usuario
+  COMMENT '<Portuguese>'
+  AS
+  SELECT
+    xxhash64(usuario_uuid) & 9223372036854775807 AS sk_usuario,
+    usuario_uuid, nome_usuario, email_usuario, idade_usuario, sexo_usuario,
+    estado_usuario, profissao_usuario, empresa_usuario, origem,
+    current_timestamp() AS data_carga,
+    data_carga          AS data_carga_silver
+  FROM STREAM(workspace.silver.tb_usuario);
+  ```
+- [X] T038 In `src/pipeline/03_gold/02_dim_usuario.sql`, remove the column list, shorten the header comment, keep the users flow unchanged, and add the members flow, per FR-007 (partial)
+  ```sql
+  CREATE FLOW gold_dim_usuario_membros_flow AS AUTO CDC ONCE INTO workspace.gold.dim_usuario
+  FROM SNAPSHOT (
+    SELECT CAST(-1 AS BIGINT) AS sk_usuario, '-1' AS usuario_uuid,
+           'Desconhecido' AS nome_usuario, 'Desconhecido' AS email_usuario,
+           CAST(NULL AS INT) AS idade_usuario, 'Desconhecido' AS sexo_usuario,
+           'Desconhecido' AS estado_usuario, 'Desconhecido' AS profissao_usuario,
+           'Desconhecido' AS empresa_usuario, 'Desconhecido' AS origem,
+           current_timestamp() AS data_carga
+    UNION ALL
+    SELECT CAST(-2 AS BIGINT), '-2', 'Não se aplica', 'Não se aplica', CAST(NULL AS INT),
+           'Não se aplica', 'Não se aplica', 'Não se aplica', 'Não se aplica',
+           'Não se aplica', current_timestamp()
+  )
+  WITH VERSION (
+    SELECT TIMESTAMP'1900-01-01' AS versao
+    WHERE NOT EXISTS (SELECT 1 FROM last_snapshot_version())
+  )
+  KEYS (usuario_uuid)
+  STORED AS SCD TYPE 1;
+  ```
+  **Keep `WITH VERSION`.** A snapshot treats absent keys as deleted at its version, and the 1900 version keeps it older than every silver row.
+- [X] T039 **Ask the owner to approve a full refresh of `workspace.gold.dim_usuario` only, and do not continue without it**, per FR-005 and Constitution, Development Workflow: full refresh (partial)
+  - Before uploading, save `SELECT count(*), sum(hash(usuario_uuid, sk_usuario)) FROM workspace.gold.dim_usuario`.
+  - Upload `src/pipeline` and confirm the workspace copy is identical to the repository.
+  - Following the quota conventions, dry run, then run an update with `--json` and `full_refresh_selection` limited to this table. Never use `--full-refresh`, which resets every table. A completed dry run proves little here, so only the real update counts.
+  - **If the update fails, stop and ask the owner.** The previous version is in commit `9b0bd91`.
+- [X] T040 Run `quickstart.md` and record the results, per FR-005, FR-007, SC-001 to SC-006 and US1 to US3 (partial)
+  - `linhas` = `sk` = `bk` = 941,236; `chave_vazia` 0; `membros` 2; `api` 741,234; `arquivo` 200,000; `divergentes` 0; `sem_dimensao` 4,362. **If `linhas` is near 2, the snapshot deleted the users: stop and ask the owner.**
+  - The checksum saved in T039 is unchanged, which proves the keys survive a full refresh. `data_carga` is expected to be newer.
+  - The 11 columns are in the order of FR-002, with `data_carga_silver` absent. If the order differs, restore the column list in the target and report it.
+  - Run a second update with no new data: every key, `data_carga` and the row count are unchanged, and the members flow stays idle.
+  - Confirm silver and bronze are unchanged. Record that FR-004's overwrite path is still not exercised, because the generators must not run.
+- [X] T041 Update `doc/pipeline-reference.md`, `doc/README.md`, `doc/architecture.md` and `doc/known-issues.md`: describe the plain view and the members' snapshot flow, remove the three-row explanation, and remove the known issue about members while silver is empty, per FR-012 (partial)
+
+## Implementation notes, Phase 12
+
+### 2026-11-04
+
+**T036–T038**: docs rewritten; the view is a plain `SELECT`; the target has no column list and
+two flows. No forbidden token.
+
+**T039**: the owner approved a full refresh of `dim_usuario` only. Saved 941,236 rows and key
+checksum 197693239602. Dry run `dd10c4f0` **COMPLETED**; update
+`2bd328d8-712c-425a-a2f7-72ef9f41e837` **COMPLETED**, with `full_refresh_selection` =
+`workspace.gold.dim_usuario` and every other dataset `EXCLUDED`.
+
+**T040**: `linhas` = `sk` = `bk` = 941,236; `chave_vazia` 0; `membros` 2; `api` 741,234;
+`arquivo` 200,000; `divergentes` 0; `sem_dimensao` 4,362. The members are as in T011. The 11
+columns are in the order of FR-002, so the column list was not needed; `quality` = `gold`;
+`STREAMING_TABLE`. **The key checksum is identical after the full refresh** (FR-005). `data_carga`
+has two values, one per flow: 20:20:48.774Z and 20:20:58.391Z. Update `{U2}`, no new data: a
+checksum over all rows of `sk_usuario`, `usuario_uuid` and `data_carga` is identical, and the
+members flow did not change the rows. Silver 941,234 and `bronze.dados_database` 3 unchanged.
+**Not exercised**: FR-004's overwrite path, because silver has no repeated key and the
+generators must not run.
+
+**T041**: `doc/pipeline-reference.md`, `doc/README.md`, `doc/architecture.md`,
+`doc/known-issues.md`.

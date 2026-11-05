@@ -109,27 +109,21 @@ settings; queries on the workspace (profile `databricks-free`) on 2026-10-28 and
 - **Consequence**: a null key no longer stops the update. Quickstart step 3 verifies the keys
   by query after a load.
 
-## Decision 8: Members generated in the flow view
+## Decision 8: Members through a one-time snapshot flow
 
-- **Decision**: each silver row emits three rows through `LATERAL VIEW explode(array(...))`:
-  the user, `-1` and `-2`. The members' sequence is `TIMESTAMP'1900-01-01'`. The `AUTO CDC`
-  flow keeps one row per key.
-- **Rationale**: one view, one flow, one target, and no extra table or setup step, which is
-  what the owner asked for. It costs about 2.8 million rows emitted on the first load for
-  941,236 rows kept.
-- **Limits**: members appear only once a silver row reaches gold. Whether new silver rows
-  rewrite the members' `data_carga` was not exercised, because the generators must not run.
-- **Alternatives tried or considered**:
-  - `UNION ALL` of literal rows in the view (the owner's first choice): dry run `d14aaf4f`
-    completed, but update `771c5ad8` failed with `Union between streaming and batch
-    DataFrames/Datasets is not supported`. **A dry run does not catch this**;
-  - `AUTO CDC ONCE ... FROM SNAPSHOT`: dry run `e7a215fc` failed with
-    `APPLY_CHANGES_FROM_SNAPSHOT_EXPECTATIONS_NOT_SUPPORTED` while the target had
-    expectations. A snapshot also treats absent keys as deleted at its version;
-  - a static reference table with a second flow (one more table and a setup step; the owner
-    chose against it);
-  - a materialized view over the target that adds the members (one more dataset, and the
-    public table would no longer be the `AUTO CDC` target).
+- **Decision**: `AUTO CDC ONCE ... FROM SNAPSHOT` with the two members as literal rows, and
+  `WITH VERSION` returning `TIMESTAMP'1900-01-01'`.
+- **Why `WITH VERSION` stays**: a snapshot treats absent keys as deleted at its version. The
+  1900 version is older than every silver row, so users are not deleted. The default version
+  is the load time, which is newer than silver's rows.
+- **Rejected attempts**:
+  - `UNION ALL` in the view: Spark rejects a stream with literal rows. Dry run `d14aaf4f`
+    passed and update `771c5ad8` failed, so **a dry run does not catch this**.
+  - Members generated from each silver row (`explode`): worked, but it was hard to follow, and
+    an empty silver meant no members.
+  - A static reference table with a second flow: one more table and a setup step.
+  - A materialized view over the target: one more dataset, and `dim_usuario` would no longer
+    be the `AUTO CDC` target.
 
 ## Decision 9: No delete condition
 

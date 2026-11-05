@@ -8,9 +8,7 @@ Shapes are in [data-model.md](data-model.md) and
 
 ## Prerequisites
 
-- `src/pipeline/03_gold/01_vw_gold_dim_usuario_tb_usuario.sql` and `02_dim_usuario.sql`
-  exist, and `01_dim_usuario.sql` does not.
-- The owner approved dropping the earlier materialized view.
+- `src/pipeline/03_gold/01_vw_gold_dim_usuario_tb_usuario.sql` and `02_dim_usuario.sql` exist.
 - Do not run the generators: the course demo must reach the talk in its initial state
   (feature 008).
 - **Free Edition**: stop the SQL warehouse (`databricks warehouses stop f796ffb64302b6ba`)
@@ -31,7 +29,6 @@ Expected: 941,234, 941,234, 941,234 (no hash collision), and 0 null sequence val
 
 | Step | Command | Expected |
 |---|---|---|
-| Remove the old file | `databricks workspace delete /Workspace/Users/arthur.luz@dataslight.com.br/lakeflow_dev/src/pipeline/03_gold/01_dim_usuario.sql --profile databricks-free` | `import-dir` does not delete it, and two files must not define one table |
 | Upload | `databricks workspace import-dir src/pipeline /Workspace/Users/arthur.luz@dataslight.com.br/lakeflow_dev/src/pipeline --overwrite --profile databricks-free` | `03_gold/` lists the two new files as `FILE` |
 | Dry run | `databricks pipelines start-update <pipeline_id> --validate-only --profile databricks-free` | `COMPLETED`; `workspace.gold.dim_usuario` defined |
 | Run | `databricks pipelines start-update <pipeline_id> --profile databricks-free` | `COMPLETED`, no failed flow. A completed dry run does not guarantee this |

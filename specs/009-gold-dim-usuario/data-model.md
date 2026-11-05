@@ -6,11 +6,11 @@
 workspace.silver.tb_usuario   (streaming read)
         │
         ▼
-vw_gold_dim_usuario_tb_usuario   (temporary view: computes the key and data_carga;
-        │                         each silver row emits the user, -1 and -2)
-        │  AUTO CDC, SCD type 1: one row per key
+vw_gold_dim_usuario_tb_usuario   (temporary view: computes the key and data_carga)
+        │  AUTO CDC, SCD type 1
         ▼
-workspace.gold.dim_usuario    (G1: streaming table, no expectations)
+workspace.gold.dim_usuario  ◄── AUTO CDC ONCE FROM SNAPSHOT ── two members
+(G1: streaming table, no expectations)
 ```
 
 ## `workspace.gold.dim_usuario`
@@ -35,7 +35,7 @@ Label: `'Desconhecido'` for `-1`, `'Não se aplica'` for `-2`.
 
 | Property | Value | Requirement |
 |---|---|---|
-| Kind | streaming table, target of one `AUTO CDC` flow | FR-001 |
+| Kind | streaming table, target of two `AUTO CDC` flows | FR-001 |
 | SCD type | 1 (`KEYS (usuario_uuid)`, `SEQUENCE BY` silver's `data_carga`) | FR-004 |
 | Surrogate key | `sk_usuario`, deterministic, stable across every update and refresh; negative only for the members | FR-005 |
 | Business key | `usuario_uuid` | FR-006 |

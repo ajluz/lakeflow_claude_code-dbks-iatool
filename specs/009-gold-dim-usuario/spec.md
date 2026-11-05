@@ -21,7 +21,7 @@
 - Q: The owner asked for an identity surrogate key. Identity columns are not supported on `AUTO CDC` targets, so how does the dimension get its key? → A: A deterministic key computed before the flow, `xxhash64(usuario_uuid) & 9223372036854775807`. The owner asked for the best solution given that limitation, and proceeded with this one. Real keys are non-negative, so negative keys mean only the two members.
 - Q: `AUTO CDC` rewrites only the rows that change, so what does `data_carga` mean now? → A: The time gold last wrote the row. It does not move on an update with no new data.
 - Q: Should the dimension declare expectations? → A: No. The owner amended the constitution to v2.0.0, under which an expectation exists only when a spec requests it, and this spec does not request any.
-- Q: How do the members get in? → A: Through the flow view. The owner asked for a `UNION ALL` of the members in the view; Spark rejects a union of a stream and literal rows, so, as the owner directed for that case, the view generates them from the silver stream.
+- Q: How do the members get in? → A: Through their own one-time `AUTO CDC ... FROM SNAPSHOT` flow, so that the flow view stays a plain `SELECT` (owner: make the feature simpler).
 - Q: The request said "all dimensions". Which does this feature cover? → A: `dim_usuario` only. `dim_curso` and `dim_codigos` are decided in their own features.
 
 ## User Scenarios & Testing *(mandatory)*
@@ -109,8 +109,6 @@ each recognizable by its attributes.
 - **A user disappears from silver.** Silver never deletes users, and it delivers no delete
   event. If a row were removed from silver, the dimension would keep the user's row with
   its last values, because the `AUTO CDC` flow has no delete condition.
-- **Silver is empty.** The members come from the silver stream, so the dimension has none
-  until the first silver row arrives. Silver has rows today.
 - **Invalid email.** 29,599 users have an email without `@` (counted, not dropped, in
   silver). The dimension keeps them as they are; it does not re-apply silver's rules.
 - **Same name in two sources.** A site user and an employee with the same name are two
@@ -202,8 +200,7 @@ each recognizable by its attributes.
   not read bronze.
 - **Default members** are required by the constitution (Principle VII) even though the
   request does not list them. Their exact key values are a planning decision; they must
-  not collide with real keys. They are generated in the flow view from the silver stream,
-  so they appear with the first silver row that reaches gold.
+  not collide with real keys. They load through a one-time snapshot flow.
 - **Stable surrogate keys** are required by the constitution (Principle VII). The earlier
   pipeline used an identity column on a materialized view, which Databricks may
   recompute; `doc/known-issues.md` lists it. Identity columns are not supported on `AUTO

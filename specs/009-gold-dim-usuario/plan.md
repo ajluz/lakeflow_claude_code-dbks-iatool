@@ -13,12 +13,12 @@ Build `workspace.gold.dim_usuario`, the first gold dataset: one row per silver u
 an "unknown" and a "not applicable" member, SCD type 1, with a surrogate key that can
 never be reassigned.
 
-Technical approach, from [research.md](research.md): a temporary view reads
-`STREAM(workspace.silver.tb_usuario)`, computes
-`sk_usuario = xxhash64(usuario_uuid) & 9223372036854775807`, and makes each silver row emit
-the user and the two members, with fixed keys `-1` and `-2`. An `AUTO CDC` flow applies it
-to a streaming table, keyed on `usuario_uuid` and sequenced by silver's `data_carga`, which
-reduces the repeated members to one row each. The dimension declares no expectations.
+Technical approach, from [research.md](research.md): a plain temporary view reads
+`STREAM(workspace.silver.tb_usuario)` and computes
+`sk_usuario = xxhash64(usuario_uuid) & 9223372036854775807`. An `AUTO CDC` flow applies it
+to a streaming table, keyed on `usuario_uuid` and sequenced by silver's `data_carga`. A
+one-time `AUTO CDC ... FROM SNAPSHOT` flow adds the two members, with fixed keys `-1` and
+`-2`. The dimension declares no expectations.
 
 ## Technical Context
 
@@ -42,8 +42,8 @@ pipeline's source glob is `.../src/pipeline/**`, so `03_gold/` needs no settings
 
 **Project Type**: data pipeline (project code under `src/pipeline/`)
 
-**Performance Goals**: 941,236 rows on the first load, from about 2.8 million rows the view
-emits (three per silver row); later updates process only new silver rows
+**Performance Goals**: 941,236 rows on the first load; later updates process only new
+silver rows
 
 **Constraints**:
 - Principle V: a gold dataset fed by a change feed is a streaming table;
@@ -54,7 +54,7 @@ emits (three per silver row); later updates process only new silver rows
   the owner's explicit approval;
 - Free Edition quota: about 4 minutes between updates.
 
-**Scale/Scope**: 2 SQL files in `03_gold/`; 1 flow; no expectations; 4 documentation
+**Scale/Scope**: 2 SQL files in `03_gold/`; 2 flows; no expectations; 4 documentation
 updates; 941,234 + 2 = 941,236 rows.
 
 Nothing is marked NEEDS CLARIFICATION.
@@ -71,14 +71,14 @@ Checked against constitution v2.0.0.
 | II. SQL-Only Declarative Pipelines | Yes | PASS | Two `.sql` files in the pipeline, with no imperative statement. |
 | III. Data Quality Expectations on Request | Yes | PASS | The spec requests no expectation, so none is declared (FR-008). Keys are verified by query after a load. |
 | IV. Quarantine, Never Silently Discard | Yes | PASS | No rule drops a row. The dimension does not re-apply silver's rules. |
-| V. Dataset Types and Flows | Yes | **DEVIATION** | Streaming table with `AUTO CDC`, SCD type 1 declared. No delete condition: see Complexity Tracking. No layout clause, and no `UNION` of a stream. Files `01_vw_gold_dim_usuario_tb_usuario.sql` and `02_dim_usuario.sql`. |
+| V. Dataset Types and Flows | Yes | **DEVIATION** | Streaming table with `AUTO CDC`, SCD type 1 declared. No delete condition: see Complexity Tracking. No layout clause. Files `01_vw_gold_dim_usuario_tb_usuario.sql` and `02_dim_usuario.sql`. |
 | VI. Record Source and Hash Keys | Yes | PASS | `usuario_uuid` is carried unchanged; `origem` is carried from silver. |
 | VII. Kimball Dimensional Modeling | Yes | PASS | Denormalized, references no dimension. Surrogate key `sk_usuario`, single column, deterministic from the business key, so it cannot change on refresh (Decision 2). Business key `usuario_uuid` retained. **SCD type 1** declared. "Unknown" (`-1`) and "not applicable" (`-2`) members. Grain: one user. |
-| Constraints | Yes | PASS | Three-level name; `dim_` prefix; `sk_`, `_uuid`, `origem`, `data_carga`; flow named `gold_dim_usuario_tb_usuario_flow`; `--profile databricks-free`; no AI Functions. |
+| Constraints | Yes | PASS | Three-level name; `dim_` prefix; `sk_`, `_uuid`, `origem`, `data_carga`; flows named `gold_dim_usuario_tb_usuario_flow` and `gold_dim_usuario_membros_flow`; `--profile databricks-free`; no AI Functions. |
 | Workflow: target graph | Yes | **DEVIATION** | The diagram shows `S3 (tb_usuario) → G1 (dim_usuario)`, without the flow view: see Complexity Tracking. |
 | Workflow: skill consulted | Yes | PASS | `databricks-pipelines`: `auto-cdc-sql.md`, `streaming-table-sql.md`. The Databricks `AUTO CDC` and limitations pages, for snapshot flows and identity columns. |
 | Workflow: completion gates | Yes | DONE | 1: dry run and update. 2: no expectation declared, so nothing to show. 3: rows = silver users + 2. 4: n/a (no silver change). 5: no fact. 6: documentation. |
-| Workflow: full refresh, table drop | Yes | DONE | The owner approved dropping the earlier materialized view (T025). No full refresh was run. |
+| Workflow: full refresh, table drop | Yes | DONE | The owner approved dropping the earlier materialized view (T025). A full refresh of `dim_usuario` only needs the owner's approval (T039). |
 
 **Gate result (post-design, 2026-11-04)**: PASS, with the two deviations recorded below.
 
@@ -108,7 +108,7 @@ src/
     ├── 02_silver/ …                 # unchanged
     └── 03_gold/
         ├── 01_vw_gold_dim_usuario_tb_usuario.sql   # NEW: flow view, computes the key
-        └── 02_dim_usuario.sql                      # NEW: streaming table, 1 flow
+        └── 02_dim_usuario.sql                      # NEW: streaming table, 2 flows
 
 doc/
 ├── pipeline-reference.md   # CHANGED: ### dim_usuario as built; intro
@@ -127,21 +127,20 @@ before the target's file. The pipeline's glob already covers both.
 
 - **Flow view**: computes `sk_usuario` and the gold `data_carga`, and renames silver's
   `data_carga` to `data_carga_silver`, because a flow cannot compute columns and the
-  sequence column must not reach the target. Each silver row emits three rows through
-  `explode(array(named_struct(...), ...))`: the user and the two members, whose sequence is
-  fixed at `TIMESTAMP'1900-01-01'` (research, Decision 8).
+  sequence column must not reach the target.
 - **Users flow**: `KEYS (usuario_uuid)`, `SEQUENCE BY data_carga_silver`, `COLUMNS * EXCEPT
   (data_carga_silver)`, `STORED AS SCD TYPE 1`.
-- **The target declares its columns** to fix the data model's column order.
+- **Members flow**: `AUTO CDC ONCE ... FROM SNAPSHOT` with `WITH VERSION` fixed at
+  `TIMESTAMP'1900-01-01'` (research, Decision 8).
+- **The target has no column list**: the flows define its schema, as in `tb_curso`.
 - **Header comments in Portuguese**: grain, SCD type 1, how the key is computed and why it
   is not an identity column, the two members and their keys, and that facts resolve
   `sk_usuario` by joining on `usuario_uuid` and fall back to `-1`.
-- **Quota**: one upload, one dry run, one update, then a second update for the stability
-  check.
+- **Quota**: about 4 minutes between updates.
 
 ## Complexity Tracking
 
 | Deviation | Why it is needed | Simpler alternative rejected |
 |---|---|---|
 | Principle V: no delete condition on the `AUTO CDC` flow | `silver.tb_usuario` is append-only and delivers no delete event, so no condition can be true | `APPLY AS DELETE WHEN false`: satisfies the wording and documents nothing |
-| Workflow: a flow view the diagram does not draw | An `AUTO CDC` flow reads only a named source and cannot compute columns, and the key, the gold `data_carga` and the members must be produced somewhere | Computing the key in silver: it would change `silver.tb_usuario`, outside this feature's scope, and a surrogate key belongs to the dimension |
+| Workflow: a flow view the diagram does not draw | An `AUTO CDC` flow reads only a named source and cannot compute columns, and the key and gold `data_carga` must be computed somewhere | Computing the key in silver: it would change `silver.tb_usuario`, outside this feature's scope, and a surrogate key belongs to the dimension |

@@ -37,7 +37,7 @@ FROM workspace.bronze.dados_files;
 ```
 
 Expected on 2026-10-18:
-- API: 756,249 candidates, 741,234 kept, 15,015 with invalid sex, 30,190 with an invalid email;
+- API: 756,249 candidates, all kept, 15,015 with invalid sex (kept with an empty sex), 30,190 with an invalid email;
 - files: 200,000 keys, 200,000 with valid sex, 0 with an invalid email.
 
 ## 2. Upload, dry run, run
@@ -53,7 +53,8 @@ Expected on 2026-10-18:
 ```sql
 SELECT origem,
        count(*)                                   AS linhas,
-       count_if(sexo_usuario NOT IN ('M','F') OR sexo_usuario IS NULL) AS sexo_invalido,
+       count_if(sexo_usuario NOT IN ('M','F')) AS sexo_invalido,
+       count_if(sexo_usuario IS NULL)          AS sexo_vazio,
        count_if(usuario_uuid IS NULL)             AS sem_chave,
        count_if(empresa_usuario IS NOT NULL)      AS com_empresa,
        count_if(data_carga IS NULL)               AS sem_data_carga,
@@ -82,8 +83,8 @@ WHERE u.origem = 'ARQUIVO';
 ```
 
 Expected:
-- `API`: `linhas` = 741,234, `com_empresa` = 0;
-- `ARQUIVO`: `linhas` = 200,000, `com_empresa` = 200,000;
+- `API`: `linhas` = 756,249, `sexo_vazio` = 15,015, `com_empresa` = 0;
+- `ARQUIVO`: `linhas` = 200,000, `sexo_vazio` = 0, `com_empresa` = 200,000;
 - `sexo_invalido`, `sem_chave` and `sem_data_carga` are 0 for both;
 - `chaves_repetidas`, `chave_arquivo_divergente` and `api_sem_acesso` are 0;
 - the columns are the 10 of the data model, in order;
@@ -103,8 +104,9 @@ Use feature 004's quickstart step 4 queries for the update of step 2. Expected f
 | `check_email_usuario` | 30,190 |
 | `check_usuario_uuid` | 0 |
 
-`passed` + `failed` = 956,249 (756,249 + 200,000) for each rule. Reconciliation:
-candidates = rows in `tb_usuario` + failed of `check_sexo_usuario`. If
+`passed` + `failed` = 956,249 (756,249 + 200,000) for each rule, and no rule drops a row.
+Reconciliation: candidates = rows in `tb_usuario` (no exclusion since 2026-11-06); the
+failed count of `check_sexo_usuario` = rows with an empty sex. If
 `chaves_repetidas` (step 3) is ever above 0, report it to the owner: the table appends
 and does not merge.
 

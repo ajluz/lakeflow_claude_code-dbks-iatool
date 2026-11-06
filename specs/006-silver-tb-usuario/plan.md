@@ -2,6 +2,23 @@
 
 **Branch**: `006-silver-tb-usuario` | **Date**: 2026-10-18 | **Spec**: [spec.md](spec.md)
 
+## Revision 2026-11-06: the sex rule becomes informative
+
+The owner asked that `check_sexo_usuario` stop removing users and only record the error
+(tasks, Phase 9).
+- **`08_tb_usuario.sql`**: the expectation stays with its predicate, and
+  `ON VIOLATION DROP ROW` is commented out, so the change is visible in the code.
+- **`06_` and `07_` flow views**: `sexo_usuario` is
+  `CASE WHEN <sexo> IN ('M', 'F') THEN <sexo> END`, so a sex other than `M` or `F`
+  becomes empty. The rule counts those rows as failures.
+- **Principle IV**: the declared exclusion is gone. Candidates now equal rows, and
+  `doc/pipeline-reference.md` no longer lists an exclusion for `tb_usuario`.
+- **Data**: the dropped users came back only through a full refresh. The owner approved
+  refreshing `silver.tb_usuario`, `gold.dim_usuario` (its stream source was rewritten) and
+  `gold.fato_venda` (keys are resolved once), through `full_refresh_selection`.
+
+The sections below describe the earlier drop rule and remain as history.
+
 ## Revision 2026-10-18: constitution v1.9.0
 
 **Flow views (constitution v1.9.0, owner, 2026-10-18, about 16:57 UTC)**: the owner

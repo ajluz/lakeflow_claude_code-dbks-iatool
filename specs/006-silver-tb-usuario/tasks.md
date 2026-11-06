@@ -314,3 +314,35 @@ dataset, if a demonstration wants `ai_classify` or `ai_extract` inside silver.
 - T015: the Data quality tab of `tb_usuario`.
 - The flow-name finding.
 - Commit the constitution v1.6.0–v1.10.0 amendments (remove the Sync Impact Report first).
+
+## Phase 9: Convergence
+
+Owner request, 2026-11-06: `check_sexo_usuario` stops removing rows and only records the
+error ("just comment it out on the code - on violation drop row"). Then both flow views set
+the sex to empty (NULL) when it is not `M` or `F`. The rule keeps its predicate, so it
+still counts those rows as failures, which is the informative record the owner asked for.
+
+- [X] T021 In `src/pipeline/02_silver/08_tb_usuario.sql` line 12, comment out the action and keep the expectation: `CONSTRAINT check_sexo_usuario  EXPECT (sexo_usuario IS NOT NULL AND sexo_usuario IN ('M', 'F')), -- ON VIOLATION DROP ROW`. The comma stays before the comment. Rewrite the header lines 6–8 in Portuguese: `check_sexo_usuario` is now informative (owner, 2026-11-06; the `ON VIOLATION DROP ROW` is kept commented out to show the change), the views put the sex as NULL when it is not `M` or `F`, and the rule counts those rows. `check_email_usuario` still only measures. Nothing else in the file changes per owner request 2026-11-06 (contradicts)
+- [X] T022 [P] In `src/pipeline/02_silver/06_vw_silver_tb_usuario_api.sql`, replace `payload.info_usuario.sexo AS sexo_usuario` with `CASE WHEN payload.info_usuario.sexo IN ('M', 'F') THEN payload.info_usuario.sexo END AS sexo_usuario`. Add a header line in Portuguese saying that a sex other than `M` or `F` becomes NULL. Columns, order and types are unchanged per owner request 2026-11-06 (missing)
+- [X] T023 [P] In `src/pipeline/02_silver/07_vw_silver_tb_usuario_files.sql`, replace `sexo AS sexo_usuario` with `CASE WHEN sexo IN ('M', 'F') THEN sexo END AS sexo_usuario`, with the same header line as T022 per owner request 2026-11-06 (missing)
+- [ ] T024 **Stop and ask the owner** before deploying. Changing the code affects new rows only (FR-013). The 15,015 users already dropped come back only through a full refresh of `workspace.silver.tb_usuario`. That refresh rewrites the source of `dim_usuario`'s stream, so `workspace.gold.dim_usuario` needs a full refresh too. `fato_venda` set its keys once, so its 4,362 sales with `sk_usuario = -1` keep that key unless `workspace.gold.fato_venda` is also fully refreshed. Ask which to approve: (a) no refresh, so only new users are affected; (b) `tb_usuario` + `dim_usuario`; (c) `tb_usuario` + `dim_usuario` + `fato_venda`. Use `full_refresh_selection` with exactly the approved tables, never a full pipeline refresh. Record the answer in the Implementation notes per FR-013, Constitution workflow (full refresh needs approval) (partial)
+- [ ] T025 Upload with `databricks workspace import-dir src/pipeline /Workspace/Users/arthur.luz@dataslight.com.br/lakeflow_dev/src/pipeline --overwrite --profile databricks-free` and confirm the three changed files are identical in the workspace. Following the quota conventions, run a dry run (`--validate-only`) to `COMPLETED`, then the update chosen in T024 to `COMPLETED`, and record its `update_id` per owner request 2026-11-06 (partial)
+- [ ] T026 Validate against the update of T025, with `--profile databricks-free`:
+  - in the expectations of `tb_usuario`, `check_sexo_usuario` has failures but drops no rows: the dropped count is 0, and passed + failed = rows written;
+  - `SELECT sexo_usuario, count(*) FROM workspace.silver.tb_usuario GROUP BY ALL` shows only `M`, `F` and NULL;
+  - with refresh (b) or (c): `tb_usuario` = 956,249 rows (941,234 + 15,015), the NULL sex count = 15,015, `usuario_uuid` is unique and never empty, and `dim_usuario` = 956,251 (2 members included);
+  - with refresh (c): `fato_venda` = `silver.tb_venda` rows, the sums of `valor_pago` and `valor_desconto` equal silver's, and `count_if(sk_usuario = -1) = 0`;
+  - `tb_quarentena` (9,240) and `tb_acesso` are unchanged;
+  - re-measure first if bronze changed since 2026-11-06, per SC-003, SC-004, SC-007 (partial)
+- [ ] T027 Record the owner's decision in this feature's documents, with no contradictory text left:
+  - in `spec.md`: rewrite FR-008 (the rule only counts; the sex is NULL when not `M`/`F`) and FR-009 (no declared exclusion any more); update US3 and its scenarios, and SC-001, SC-002 and SC-003 (sex is `M`, `F` or empty; no row removed); replace the "Drop the row" Assumption; add a `### Session 2026-11-06` clarification;
+  - in `plan.md`: add a "Revision 2026-11-06" section at the top;
+  - in `data-model.md`, `contracts/silver-tb-usuario.md` and `quickstart.md`: the expected counts of T026;
+  - per FR-008, FR-009, US3, SC-001–SC-003 (contradicts)
+- [ ] T028 [P] Update the project documentation per FR-015 (contradicts):
+  - `doc/pipeline-reference.md` line 204: `check_sexo_usuario` becomes "warn only; the views put the sex as NULL when not `M`/`F`";
+  - `doc/pipeline-reference.md` line 209: remove the reconciliation exclusion;
+  - `doc/data-generation.md` line 49: `X` becomes "kept in `tb_usuario` with an empty sex";
+  - `specs/013-gold-fato-venda` (data-model, quickstart, contract, research Decision 9) and `specs/009-gold-dim-usuario`: replace the "4,362 sales whose user silver rejects" explanation with the counts T026 measured;
+  - `doc/known-issues.md`: update any entry that mentions the dropped users.
+- [ ] T029 Ask the owner to confirm that the Data quality tab of `tb_usuario` shows the three expectations, with `check_sexo_usuario` reporting failures and no dropped rows. Record the answer; it also closes T015 per T015, US3 (partial)

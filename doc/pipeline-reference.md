@@ -185,7 +185,7 @@ would show up as a repeated key.
 | `nome_usuario` | `payload.info_usuario.nome` | `nome_funcionario` |
 | `email_usuario` | `payload.info_usuario.email` | `email_funcionario` |
 | `idade_usuario` | `try_cast(payload.info_usuario.idade AS INT)` | `try_cast(idade AS INT)` |
-| `sexo_usuario` | `payload.info_usuario.sexo` | `sexo` |
+| `sexo_usuario` | `payload.info_usuario.sexo` when `M` or `F`, else null | `sexo` when `M` or `F`, else null |
 | `estado_usuario` | `payload.info_usuario.estado` | `estado` |
 | `profissao_usuario` | `payload.info_usuario.profissao` | `profissao` |
 | `empresa_usuario` | null | `nome_empresa` |
@@ -201,12 +201,12 @@ API rows come only from valid events that carry a user. Business key columns:
 
 | Expectation | Rule | On violation |
 |---|---|---|
-| `check_sexo_usuario` | `sexo_usuario` is `M` or `F` (null fails) | drop row; a declared exclusion, not quarantined (constitution v1.7.0, Principle IV) |
+| `check_sexo_usuario` | `sexo_usuario` is `M` or `F` (null fails) | record only; the flow views put the sex as null when it is not `M` or `F`, and `ON VIOLATION DROP ROW` is commented out (owner, 2026-11-06) |
 | `check_email_usuario` | `email_usuario` contains `@` (null fails) | record only |
 | `check_usuario_uuid` | `usuario_uuid IS NOT NULL` | record only |
 
-**Reconciliation**: candidate users of both sources = rows in `tb_usuario` + rows
-dropped by `check_sexo_usuario`.
+**Reconciliation**: candidate users of both sources = rows in `tb_usuario`; no rule
+removes a row. The failed count of `check_sexo_usuario` = rows with a null sex.
 
 ### tb_venda
 

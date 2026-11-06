@@ -8,6 +8,16 @@
 
 **Input**: User description: "generate the tb_usuario with the follow constraints: 1. CONSTRAINT check_sexo_usuario = should be M or F. in that case droip the row. CONSTRAINT check_email_usuario = email_usuario must have %@%. if not the email is not valid. this constraint it's just informative. the tb_usuario will have 2 sources - bronze_api and bronze_files. from bronze_api the table must have the follow fields: 1. usuario_uuid where will be a uuid field thar will concatenate the follow fields: timestamp_acesso, payload.info_usuario.nome. 2. nome_usuario 3. email_usuario 4. idade usuario - as integer 5. sexo_usuario 6. estado_usuario 7. profissao_usuario 8. origem 9. data_carga. from bronze_files the table must have the follow fields: 1. usuario_uuid where will be a uuid field thar will concatenate the follow fields: nome_empresa and nome_funcionario. 2. nome_usuario 3. email_usuario 4. idade_usuario - as integer 5. sexo_usuario 6. estado_usuario 7. profissao_usuario 8. empresa_usuario 8. origem 9. data_carga"
 
+## Clarifications
+
+### Session 2026-11-06
+
+- Q: Should `check_sexo_usuario` keep removing users whose sex is not `M` or `F`? → A: No
+  (owner). The rule only records the error: `ON VIOLATION DROP ROW` is commented out in
+  the code, and both flow views put the sex as empty (NULL) when it is not `M` or `F`. The
+  rule still counts those rows as failures. The users dropped before were brought back by
+  a full refresh of `tb_usuario`, `dim_usuario` and `fato_venda` approved by the owner.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Users from the site in one conformed table (Priority: P1)
@@ -19,8 +29,7 @@ that the site's audience can be analysed.
 **Why this priority**: the API is the largest source of users, and its user key already
 exists (feature 005), so this half of the table can be delivered first.
 
-**Independent Test**: after a run, every valid event that carries a user, apart from
-those removed by the sex rule, has one row in `tb_usuario` with `origem = 'API'` and the
+**Independent Test**: after a run, every valid event that carries a user has one row in `tb_usuario` with `origem = 'API'` and the
 same `usuario_uuid` as its row in `tb_acesso`.
 
 **Acceptance Scenarios**:
@@ -48,8 +57,8 @@ corporate buyers can be analysed together.
 **Why this priority**: the request puts both sources in one table. Without the files
 source, corporate buyers would have no user record.
 
-**Independent Test**: after a run, every distinct employee of the files source, apart
-from those removed by the sex rule, appears exactly once in `tb_usuario` with
+**Independent Test**: after a run, every distinct employee of the files source appears
+exactly once in `tb_usuario` with
 `origem = 'ARQUIVO'` and their company in `empresa_usuario`.
 
 **Acceptance Scenarios**:
@@ -67,31 +76,30 @@ from those removed by the sex rule, appears exactly once in `tb_usuario` with
 
 ---
 
-### User Story 3 - Reject impossible sex values and measure invalid emails (Priority: P1)
+### User Story 3 - Measure impossible sex values and invalid emails (Priority: P1)
 
-As the project owner, I want users whose sex is not `M` or `F` removed from the table,
-and users with an email that has no `@` counted but kept. The talk can then show a
-dropping rule and an informative rule on a table fed by two sources.
+As the project owner, I want users whose sex is not `M` or `F` kept with an empty sex and
+counted, and users with an email that has no `@` counted but kept. Both rules are then
+informative: the pipeline shows the errors without losing users (owner, 2026-11-06).
 
-**Why this priority**: the two rules are the point of this table in the demonstration,
-and the sex rule decides which rows the table holds.
+**Why this priority**: the two rules are the point of this table in the demonstration.
 
-**Independent Test**: after a run, the data quality view shows both rules. The sex rule's
-failed count equals the number of candidate user rows whose sex is not `M` or `F`, none
-of which is in the table. The email rule's failed count equals the number of candidate
-user rows whose email has no `@`.
+**Independent Test**: after a run, the data quality view shows both rules, with no row
+dropped. The sex rule's failed count equals the number of candidate user rows whose sex
+is not `M` or `F`, and those rows are in the table with an empty sex. The email rule's
+failed count equals the number of candidate user rows whose email has no `@`.
 
 **Acceptance Scenarios**:
 
 1. **Given** a user whose sex is `X`, empty or anything other than `M` or `F`, **When** the
-   run completes, **Then** the user is not in `tb_usuario` and is counted as a failure of
-   `check_sexo_usuario`.
+   run completes, **Then** the user is in `tb_usuario` with an empty `sexo_usuario` and is
+   counted as a failure of `check_sexo_usuario`, and the run does not stop.
 2. **Given** a user whose email has no `@` (for example `usuario_ab12cd34#yahoo.com`) or
    no email at all, **When** the run completes, **Then** the user is in `tb_usuario` and
    counted as a failure of `check_email_usuario`, and the run does not stop.
-3. **Given** users removed by `check_sexo_usuario`, **When** the owner looks for them,
-   **Then** they are not in quarantine. Their number is the rule's failed count, and the
-   documentation lists the rule as a declared exclusion of both sources.
+3. **Given** users counted by `check_sexo_usuario`, **When** the owner looks for them,
+   **Then** they are in `tb_usuario` with an empty sex, not in quarantine, and no
+   reconciliation exclusion is needed.
 
 ---
 
@@ -99,8 +107,8 @@ user rows whose email has no `@`.
 
 - An age that is not a whole number, or is empty: `idade_usuario` is empty. The row is
   kept and the rules are unaffected.
-- A sex value in lower case (`m`, `f`): it is not `M` or `F` as written, so it fails the
-  rule and is dropped. The generator writes only `M`, `F` and `X`.
+- A sex value in lower case (`m`, `f`): it is not `M` or `F` as written, so it becomes
+  empty and is counted by the rule; the row is kept. The generator writes only `M`, `F` and `X`.
 - The same person visits the site several times: each visit yields a different
   `usuario_uuid`, because the key includes the access time, as requested. So the person
   has one row per visit.
@@ -130,7 +138,7 @@ user rows whose email has no `@`.
   | `nome_usuario` | STRING | `payload.info_usuario.nome` | `nome_funcionario` |
   | `email_usuario` | STRING | `payload.info_usuario.email` | `email_funcionario` |
   | `idade_usuario` | INT | `payload.info_usuario.idade`, as a whole number | `idade`, as a whole number |
-  | `sexo_usuario` | STRING | `payload.info_usuario.sexo` | `sexo` |
+  | `sexo_usuario` | STRING | `payload.info_usuario.sexo` when `M` or `F`, else empty | `sexo` when `M` or `F`, else empty |
   | `estado_usuario` | STRING | `payload.info_usuario.estado` | `estado` |
   | `profissao_usuario` | STRING | `payload.info_usuario.profissao` | `profissao` |
   | `empresa_usuario` | STRING | empty | `nome_empresa` |
@@ -152,11 +160,11 @@ user rows whose email has no `@`.
   its own flow, without merging; uniqueness holds because each key occurs once in the
   current data. It MUST be verified after every load, and a repeated key MUST be reported
   to the owner (owner's decision, 2026-10-18).
-- **FR-008**: The table MUST declare `check_sexo_usuario`: `sexo_usuario` is `M` or `F`.
-  A row that fails, an empty sex included, MUST be removed from the table.
-- **FR-009**: Rows removed by `check_sexo_usuario` MUST NOT be routed to quarantine. The
-  drop is a declared exclusion (constitution v1.7.0, Principle IV): the plan names the
-  rule and its reason, the failed count records the rows, and the documentation lists it.
+- **FR-008**: `sexo_usuario` MUST be `M`, `F` or empty: each flow view writes it as empty
+  (NULL) when the source sex is anything other than `M` or `F` (owner, 2026-11-06).
+- **FR-009**: The table MUST declare `check_sexo_usuario`: `sexo_usuario` is `M` or `F`. A
+  failure, an empty sex included, MUST only be counted: no row is removed or quarantined.
+  The former `ON VIOLATION DROP ROW` stays commented out in the code (owner, 2026-11-06).
 - **FR-010**: The table MUST declare `check_email_usuario`: `email_usuario` contains `@`.
   A failure, an empty email included, MUST only be counted.
 - **FR-011**: The table MUST declare that `usuario_uuid` is never empty.
@@ -177,19 +185,18 @@ user rows whose email has no `@`.
   through `usuario_uuid`.
 - **Corporate user**: taken from a sales file row, together with the company. Reached
   from later sales tables through `usuario_uuid`.
-- **User rules**: `check_sexo_usuario` (removes the row), `check_email_usuario` (counts
-  only), and the not-empty rule on `usuario_uuid`.
+- **User rules**: `check_sexo_usuario` and `check_email_usuario` (both count only), and the not-empty rule on `usuario_uuid`.
 
 ## Success Criteria *(mandatory)*
 
 ### Measurable Outcomes
 
-- **SC-001**: API rows in `tb_usuario` = valid API events with a user − those whose sex is
-  not `M` or `F`, with a difference of 0.
+- **SC-001**: API rows in `tb_usuario` = valid API events with a user, with a difference
+  of 0.
 - **SC-002**: Files rows in `tb_usuario` = distinct employees (company, name) in the sales
-  files − those whose sex is not `M` or `F`, with a difference of 0.
-- **SC-003**: 0 rows have a sex other than `M` or `F`, and 0 rows have an empty
-  `usuario_uuid`. No two rows share a `usuario_uuid`.
+  files, with a difference of 0.
+- **SC-003**: Every row has a sex of `M`, `F` or empty, the empty ones equal the sex
+  rule's failed count, and 0 rows have an empty `usuario_uuid`. No two rows share a `usuario_uuid`.
 - **SC-004**: The quality view lists both rules, each with failed counts equal to those
   computed directly from the sources.
 - **SC-005**: 100% of API rows join `tb_acesso` on `usuario_uuid`, apart from users whose
@@ -200,10 +207,10 @@ user rows whose email has no `@`.
 
 ## Assumptions
 
-- "Drop the row" for `check_sexo_usuario` means the expectation action that removes the
-  row. As with `tb_acesso` (feature 005), the owner does not want these rows quarantined:
-  "Not all constraints need to go to the quarantine table". The constitution allows this
-  as a declared exclusion (v1.7.0).
+- The request first asked to drop rows failing `check_sexo_usuario` (a declared exclusion,
+  constitution v1.7.0). On 2026-11-06 the owner replaced it: the users are kept with an
+  empty sex and the rule only counts them, because their sales and accesses exist and
+  should keep their user.
 - `%@%` means the email contains an `@` anywhere. An empty email is counted as not valid.
 - `bronze_api` means the API events after validation: the valid side of feature 004,
   through the shared view of feature 005. Reading bronze directly would skip the

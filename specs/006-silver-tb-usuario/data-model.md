@@ -37,7 +37,7 @@ Conformed silver table, published. Each flow view shapes its source into these c
 | `nome_usuario` | STRING | `payload.info_usuario.nome` | `nome_funcionario` | — |
 | `email_usuario` | STRING | `payload.info_usuario.email` | `email_funcionario` | `check_email_usuario`: not null and contains `@` (warn) |
 | `idade_usuario` | INT | `try_cast(payload.info_usuario.idade AS INT)` | `try_cast(idade AS INT)` | null when not a whole number |
-| `sexo_usuario` | STRING | `payload.info_usuario.sexo` | `sexo` | `check_sexo_usuario`: not null and in (`M`, `F`) (drop row) |
+| `sexo_usuario` | STRING | `CASE WHEN payload.info_usuario.sexo IN ('M', 'F') THEN payload.info_usuario.sexo END` | `CASE WHEN sexo IN ('M', 'F') THEN sexo END` | `check_sexo_usuario`: not null and in (`M`, `F`) (warn; `ON VIOLATION DROP ROW` commented out, owner 2026-11-06) |
 | `estado_usuario` | STRING | `payload.info_usuario.estado` | `estado` | — |
 | `profissao_usuario` | STRING | `payload.info_usuario.profissao` | `profissao` | — |
 | `empresa_usuario` | STRING | `CAST(NULL AS STRING)` | `nome_empresa` | filled exactly on `ARQUIVO` rows |
@@ -54,17 +54,17 @@ Exactly these 10 columns, in this order.
 | `quality` | `silver` | FR-012 |
 | Hash key business columns | API: `access_date` (as timestamp), `payload.info_usuario.nome`. Files: `nome_empresa`, `nome_funcionario` | FR-015 |
 
-## Expected counts (2026-10-18)
+## Expected counts (2026-11-06, after the informative sex rule)
 
 ```text
-API:   756,249 candidate users − 15,015 (sexo X) = 741,234 rows
-Files: 200,000 candidate users − 0               = 200,000 rows
-tb_usuario                                        = 941,234 rows
-check_sexo_usuario failed  = 15,015   (declared exclusion, not quarantined)
+API:   756,249 candidate users = 756,249 rows (15,015 of them with an empty sex)
+Files: 200,000 candidate users = 200,000 rows
+tb_usuario                     = 956,249 rows
+check_sexo_usuario failed  = 15,015   (counted only; the rows are kept with an empty sex)
 check_email_usuario failed = 30,190   (all candidate API rows; files 0)
 ```
 
 ## State of a row
 
-Rows are only appended. A delivery whose sex fails the rule is dropped. A re-delivered
+Rows are only appended. A delivery whose sex is not `M` or `F` is kept with an empty sex. A re-delivered
 key would be appended as a second row, and the uniqueness check would report it.

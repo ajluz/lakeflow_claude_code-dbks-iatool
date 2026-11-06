@@ -46,7 +46,7 @@ These exist so the pipeline's expectations and quarantine have something to catc
 | `forma_pagamento` | `-----` | 3% | quarantine |
 | `ip_address` | `999.999.999.999` | ~1% | dropped from `tb_acesso` |
 | `access_point` | `unknown` | 5% | recorded on `tb_acesso` |
-| `sexo` | `X` | 2% | dropped from `tb_usuario` |
+| `sexo` | `X` | 2% | kept in `tb_usuario` with a null sex; recorded by `check_sexo_usuario` |
 | `email` | `#yahoo.com` / `#google.com` (no `@`) | 4% | recorded on `tb_usuario` |
 
 ### Value distributions

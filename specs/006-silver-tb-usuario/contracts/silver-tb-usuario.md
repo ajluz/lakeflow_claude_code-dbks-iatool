@@ -29,12 +29,14 @@ Nothing else.
 ## Flow views and `08_tb_usuario.sql`
 
 Each flow view selects exactly the 10 columns of the data model; the API view keeps the
-`WHERE NOT fl_registro_invalido AND payload.info_usuario.nome IS NOT NULL` filter.
+`WHERE NOT fl_registro_invalido AND payload.info_usuario.nome IS NOT NULL` filter. Both
+views write `sexo_usuario` as `CASE WHEN <sexo> IN ('M', 'F') THEN <sexo> END`, and
+`check_sexo_usuario` only counts (owner, 2026-11-06).
 Constitution v1.9.0 requires every append flow to read such a view.
 
 ```sql
 CREATE OR REFRESH STREAMING TABLE workspace.silver.tb_usuario (
-  CONSTRAINT check_sexo_usuario  EXPECT (sexo_usuario IS NOT NULL AND sexo_usuario IN ('M', 'F')) ON VIOLATION DROP ROW,
+  CONSTRAINT check_sexo_usuario  EXPECT (sexo_usuario IS NOT NULL AND sexo_usuario IN ('M', 'F')), -- ON VIOLATION DROP ROW
   CONSTRAINT check_email_usuario EXPECT (email_usuario IS NOT NULL AND email_usuario LIKE '%@%'),
   CONSTRAINT check_usuario_uuid  EXPECT (usuario_uuid IS NOT NULL)
 )

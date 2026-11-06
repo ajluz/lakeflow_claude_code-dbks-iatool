@@ -50,7 +50,8 @@ lakeflow/
 │           ├── 04_vw_gold_dim_curso_dados_database.sql  Flow view: surrogate key per course version
 │           ├── 05_vw_gold_dim_curso_membros.sql         Course dimension members -1 / -2
 │           ├── 06_dim_curso.sql          Course dimension: AUTO CDC SCD type 2, members by a once-only flow
-│           └── 07_fato_venda.sql         Sales fact: streaming table over tb_venda, stream-static inner joins to the dimensions
+│           ├── 07_fato_venda.sql         Sales fact: streaming table over tb_venda, stream-static inner joins to the dimensions
+│           └── 08_obt_acesso.sql         Access one-big-table: materialized view by location, address and day
 ├── explorations/            Auxiliary code: setup, generators and notebooks
 │   ├── setup/               Environment preparation, run by hand in step order
 │   │   ├── 01_schemas.sql                Creates the schemas and applies the access rule
@@ -79,7 +80,7 @@ far; gold is not built yet.
 |---|---|
 | Catalog / schemas | `workspace.bronze`, `workspace.silver`, `workspace.gold` |
 | Landing volume | `/Volumes/workspace/bronze/landing/{stream,files,database}` |
-| Pipeline datasets | 3 bronze streaming tables; in silver, 7 streaming views, 1 private streaming table and 5 streaming tables; in gold, 3 streaming views, 3 streaming tables and 1 materialized view (plus `dim_tempo`, created outside the pipeline) |
+| Pipeline datasets | 3 bronze streaming tables; in silver, 7 streaming views, 1 private streaming table and 5 streaming tables; in gold, 3 streaming views, 3 streaming tables and 2 materialized views (plus `dim_tempo`, created outside the pipeline) |
 | Created outside the pipeline | `workspace.gold.dim_tempo` (by `explorations/setup/04_dim_tempo.sql`) |
 | Target environment | Databricks Free Edition (streaming simulated with `availableNow`) |
 

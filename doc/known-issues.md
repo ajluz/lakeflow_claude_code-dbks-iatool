@@ -16,10 +16,8 @@ The pipeline targets the `workspace` catalog, but a few places still reference
 
 ## Smaller items
 
-- `obt_acesso` is still the earlier pipeline's
-  [05_obt_acesso.sql](../code_tips/03_gold/05_obt_acesso.sql), whose access-row join is still
-  to be rebuilt. `fato_venda` (feature 013) does not drop sales: the dimension lookups are
-  inner joins with proven coverage, and the access lookup is a left join from the sales.
+- `fato_venda` (feature 013) does not drop sales: the dimension lookups are inner joins with
+  proven coverage, and the access lookup is a left join from the sales.
 - [05_tb_acesso.sql:1](../code_tips/02_silver/05_tb_acesso.sql#L1) uses
   `CREATE OR REPLACE` where every other table uses `CREATE OR REFRESH`.
 - `dim_curso` and `tb_curso` both read the bronze change feed, through

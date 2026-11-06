@@ -528,14 +528,26 @@ written are not reprocessed, and the fallback puts them on the first version any
 
 ### obt_acesso
 
-[05_obt_acesso.sql](../code_tips/03_gold/05_obt_acesso.sql) — materialized view.
-One row per access event, denormalized with every `dim_tempo` attribute, for
-funnel analysis without joins.
+[08_obt_acesso.sql](../src/pipeline/03_gold/08_obt_acesso.sql) — materialized view
+`workspace.gold.obt_acesso`, recomputed on every update. As built (feature 014). A
+one-big-table for access-funnel analysis without joins.
 
-| Column | Meaning |
-|---|---|
-| `local_acesso`, `endereco_ip_acesso` | access attributes |
-| `data`, `ano`, `mes`, … | calendar attributes |
-| `qtde_acesso` | always 1 |
-| `qtde_usuario` | 1 when the access has an identified user |
-| `qtde_vendidos` | 1 when the access resulted in a sale (left join to `tb_venda`) |
+**Grain**: one row per combination of `local_acesso`, `endereco_ip_acesso` and `data` (the
+access day). The three counts are summed over that combination's accesses.
+
+| Column | Type | Meaning |
+|---|---|---|
+| `local_acesso`, `endereco_ip_acesso` | STRING | the access's values in `tb_acesso` |
+| `data` | DATE | the access day, `CAST(timestamp_acesso AS DATE)` |
+| `ano`, `mes`, `mes_ano`, `dia_mes`, `dia_semana`, `dia_semana_int`, `fl_dia_semana`, `dia_ano`, `fl_ultimo_dia_mes`, `semana_ano`, `semestre`, `trimestre`, `bimestre` | as in `dim_tempo` | the calendar attributes of `data`, with `dim_tempo`'s names and values |
+| `qtde_acesso` | BIGINT | accesses of the combination (always at least 1) |
+| `qtde_usuario` | BIGINT | accesses of the combination that carry a user |
+| `qtde_vendidos` | BIGINT | site sales linked to the combination's accesses; sales are counted per access first, so an access is never duplicated |
+
+**Sources**: `silver.tb_acesso`, `silver.tb_venda` (site sales, by `acesso_uuid`) and
+`gold.dim_tempo`. `fato_venda` is not used: it stores no access identifier. File sales and
+sales whose access silver rejected have no access in `tb_acesso`, so they are not counted.
+
+**Reconciliation**: `sum(qtde_acesso)` equals the rows of `tb_acesso`. Both joins are left joins
+from the accesses, so no access is lost to the sales or the calendar lookup. The measures
+stay defined in their own datasets; this table only counts them.

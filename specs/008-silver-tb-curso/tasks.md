@@ -125,7 +125,7 @@ reviewed only.
   - `vendas_sem_curso` = `acessos_sem_curso` = 0;
   - `quality` = `silver`.
 - [X] T012 Run quickstart.md step 4 for the update that processed the three changes. For dataset `tb_curso`, each of `check_curso_uuid`, `check_nome_curso` and `check_valor_curso` passed 3 and failed 0
-- [ ] T013 Ask the owner to confirm that the Data quality tab of `tb_curso` shows the three expectations. Record the answer
+- [X] T013 Ask the owner to confirm that the Data quality tab of `tb_curso` shows the three expectations. Record the answer
 
 ---
 
@@ -251,3 +251,7 @@ amendment in `.specify/memory/constitution.md`. Features 004–007's files are u
 - T020–T021: the update and the deletion, at the talk (quickstart.md step 6).
 - The flow-name finding (now five flows under `workspace.bronze`).
 - Remove the constitution's Sync Impact Report (committed in `d80ecc3`).
+
+**T013 (closed 2026-11-06)**: the owner confirmed that the Data quality tab of `tb_curso` shows
+the three expectations. T020 and T021 (the live demo's `update row` and `delete row`) remain
+open: on 2026-11-06 `bronze.dados_database` held only the three inserts.

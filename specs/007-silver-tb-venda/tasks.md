@@ -186,7 +186,7 @@ research.md's table.
   - `percentual_fora` = 0 and `sem_valor_desconto` = 0;
   - for each course and percentage, `min(valor_desconto)` = `max(valor_desconto)` = the amount in research.md's table, and `0.00` for `0%`.
 - [X] T014 Run quickstart.md step 4 for the update of T010. For dataset `tb_venda`, every expectation has failed = 0 and passed = `api_vendas` + `arquivo_vendas`. Reconcile per source: candidates = rows, with no exclusion. Confirm `tb_quarentena` is unchanged by this feature
-- [ ] T015 Ask the owner to confirm that the Data quality tab of `tb_venda` shows the five expectations. Record the answer
+- [X] T015 Ask the owner to confirm that the Data quality tab of `tb_venda` shows the five expectations. Record the answer
 
 ---
 
@@ -351,3 +351,6 @@ showed only the four `doc/` files. Features 004–006's files are unchanged.
 - The flow-name finding (now four flows under `workspace.bronze`).
 - Whether the full refresh `c52cd902` was intended.
 - Commit the documentation changes and this file.
+
+**T015 (closed 2026-11-06)**: the owner confirmed that the Data quality tab of `tb_venda` shows
+the five expectations.

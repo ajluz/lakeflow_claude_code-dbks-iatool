@@ -243,7 +243,7 @@ Implementation notes, which are preserved below.
   - `passou + falhou = total` for each rule.
 
   Record the three `falhou` values. A mismatch means a `CONSTRAINT` and its `CASE` line differ: report it to the owner before fixing.
-- [ ] T018 [US2] Confirm that the rules only measure: the update of T015 is `COMPLETED`; `grep -n "ON VIOLATION" src/pipeline/02_silver/*.sql` returns nothing; and T016's count equals `total`. Ask the owner to confirm, in the pipeline UI, that the Data quality tab of `temp_tb_validacao_api` shows the three expectations with their metrics (completion gate 2). Record the answer
+- [X] T018 [US2] Confirm that the rules only measure: the update of T015 is `COMPLETED`; `grep -n "ON VIOLATION" src/pipeline/02_silver/*.sql` returns nothing; and T016's count equals `total`. Ask the owner to confirm, in the pipeline UI, that the Data quality tab of `temp_tb_validacao_api` shows the three expectations with their metrics (completion gate 2). Record the answer
 
 ---
 
@@ -616,3 +616,8 @@ expectations with their metrics (T017).
 became `03_temp_tb_validacao_api.sql`, and `03_tb_quarentena.sql` became
 `04_tb_quarentena.sql`; `02_` is now `vw_bronze_dados_files` (feature 006). Content is
 unchanged, so no dataset changed. Task texts above keep the names used when they ran.
+
+**T018 (closed 2026-11-06)**: `src/pipeline/02_silver/03_temp_tb_validacao_api.sql` declares no
+`ON VIOLATION`; the rules only measure. The `ON VIOLATION` lines now found in `02_silver` belong
+to later features (`05_tb_acesso.sql`'s declared exclusion, `08_tb_usuario.sql`'s commented
+drop). The owner confirmed the task finished, including the Data quality tab.

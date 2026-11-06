@@ -213,7 +213,7 @@ run the matching step of quickstart.md against the workspace.
 
   Confirm that the `tb_acesso` flow wrote `mantidos` rows, and that `SELECT count(*) FROM workspace.silver.tb_acesso WHERE endereco_ip_acesso = '999.999.999.999'` is 0. Record the numbers.
 - [X] T012 [P] [US2] Reconcile (FR-014, SC-001): `validos` = rows in `tb_acesso` + failed of `check_endereco_ip_acesso`, with a difference of 0. Confirm that `tb_quarentena` did not grow (still 9,240), so the dropped rows were not quarantined
-- [ ] T013 [US2] Confirm the commented rule: in `src/pipeline/02_silver/05_tb_acesso.sql`, the line after the active `check_local_acesso` starts with `--` and ends in `ON VIOLATION FAIL UPDATE,`; `grep -c "FAIL UPDATE" src/pipeline/02_silver/05_tb_acesso.sql` is 1, and that line is commented. Ask the owner to confirm that the pipeline UI's Data quality tab for `tb_acesso` shows the four expectations. Record the answer
+- [X] T013 [US2] Confirm the commented rule: in `src/pipeline/02_silver/05_tb_acesso.sql`, the line after the active `check_local_acesso` starts with `--` and ends in `ON VIOLATION FAIL UPDATE,`; `grep -c "FAIL UPDATE" src/pipeline/02_silver/05_tb_acesso.sql` is 1, and that line is commented. Ask the owner to confirm that the pipeline UI's Data quality tab for `tb_acesso` shows the four expectations. Record the answer
 
 **Checkpoint**: the three expectation actions are demonstrable
 
@@ -437,3 +437,7 @@ amended to v1.8.0 ("one expression per key"; the diagram is the target graph). C
 
 The task texts above keep the names that were current when they ran. The data model,
 contract, quickstart, research and plan were revised.
+
+**T013 (closed 2026-11-06)**: in `05_tb_acesso.sql` the only `FAIL UPDATE` constraint (line 15)
+is commented out. `grep -c "FAIL UPDATE"` returns 2 because the header comment (line 7) also
+names the variant. The owner confirmed the task finished, including the Data quality tab.

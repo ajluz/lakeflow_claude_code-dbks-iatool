@@ -37,7 +37,7 @@ Grain: one user. Exactly these 11 columns, in this order.
 
 Label: `'Desconhecido'` for `-1`, `'Não se aplica'` for `-2`.
 
-**Inferred users** (FR-013, 2026-11-05): one row per `usuario_uuid` that `tb_venda`
+**Inferred users** (FR-013, 2026-11-05; **undone 2026-11-06**, kept as history; the dimension has none): one row per `usuario_uuid` that `tb_venda`
 references and `tb_usuario` lacks.
 
 | Column | Value |
@@ -54,7 +54,7 @@ recognised by `sk_usuario > 0 AND nome_usuario = 'Desconhecido'`.
 
 | Property | Value | Requirement |
 |---|---|---|
-| Kind | streaming table, target of three `AUTO CDC` flows (users, inferred users, members snapshot) | FR-001, FR-013 |
+| Kind | streaming table, target of two `AUTO CDC` flows (users, members snapshot) | FR-001 |
 | SCD type | 1 (`KEYS (usuario_uuid)`, `SEQUENCE BY` silver's `data_carga`) | FR-004 |
 | Surrogate key | `sk_usuario`, deterministic, stable across every update and refresh; negative only for the members | FR-005 |
 | Business key | `usuario_uuid` | FR-006 |
@@ -62,15 +62,15 @@ recognised by `sk_usuario > 0 AND nome_usuario = 'Desconhecido'`.
 
 ## How facts will use it
 
-`fato_venda` resolves `sk_usuario` by joining on `usuario_uuid`. With inferred users every
-sale's user has a row: the anti join of `tb_venda` against `dim_usuario` returns 0 rows. The
-fact may therefore inner-join (constitution v3.1.0). `-2` remains for facts with no user by
-nature. The join stays
+`fato_venda` resolves `sk_usuario` by joining on `usuario_uuid`. 4,362 sales reference users
+that silver rejected and the dimension does not hold, so the fact uses a left join and `-1`
+for them (constitution v3.1.0: no coverage guarantee, no inner join). `-2` remains for facts with
+no user by nature. The join stays
 the documented method (Principle VII), even though the key could be computed directly.
 
 ## Expected rows
 
 ```text
-941,234 silver users + 4,362 inferred users + 2 members = 945,598   (2026-11-05)
-silver: API 741,234 · ARQUIVO 200,000 · inferred: API 4,362 · members 2
+941,234 silver users + 2 members = 941,236   (2026-11-06, after the inferred users were undone)
+API 741,234 · ARQUIVO 200,000 · members 2
 ```

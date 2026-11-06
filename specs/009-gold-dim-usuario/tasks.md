@@ -482,3 +482,292 @@ generators must not run.
 
 **T041**: `doc/pipeline-reference.md`, `doc/README.md`, `doc/architecture.md`,
 `doc/known-issues.md`.
+
+---
+
+## Phase 13: Inferred users (spec FR-013, 2026-11-05)
+
+**Purpose**: give `dim_usuario` a row for every user that sales reference, so that
+`fato_venda` can inner-join it (constitution v3.1.0, Principle V).
+
+Design: plan "Revision 2026-11-05"; research, Decisions 10–13. Validation: quickstart
+section 6.
+
+**Independent Test**:
+- `dim_usuario` has 945,598 rows, of which 4,362 are inferred;
+- the anti join of `tb_venda` against `dim_usuario` returns 0 rows;
+- silver users' keys and `data_carga` are unchanged.
+
+**Phase conventions**:
+- `WS=/Workspace/Users/arthur.luz@dataslight.com.br/lakeflow_dev/src/pipeline`.
+- Upload with `databricks workspace import-dir src/pipeline $WS --overwrite`.
+- Verify each file with `databricks workspace export $WS/<path> --format AUTO | cmp - src/pipeline/<path>`.
+- SQL runs through `databricks experimental aitools tools query`.
+- No full refresh, no table drop, and no generator run. Comments are in Portuguese; docs in
+  English.
+
+- [X] T042 Record the baseline before any change:
+  - the pipeline is `IDLE`;
+  - quickstart 6 "Before the change": `linhas` 941,236 and `checksum` of `dim_usuario`;
+    `faltantes` 4,362;
+  - the same checksum restricted to
+    `NOT (sk_usuario > 0 AND nome_usuario = 'Desconhecido') AND sk_usuario > 0`
+    (silver users only);
+  - `fato_venda`: 420,472 rows, `count_if(sk_usuario = -1)` 4,362 and
+    `sum(hash(sk_tempo, sk_codigos, sk_curso, sk_usuario, valor_desconto, valor_pago))`
+    736219987002.
+- [X] T043 Renumber the gold files (research, Decision 12). Use `git mv` for the five tracked
+  files, from the highest number down:
+  - `06_dim_curso.sql` → `07_`;
+  - `05_vw_gold_dim_curso_membros.sql` → `06_`;
+  - `04_vw_gold_dim_curso_dados_database.sql` → `05_`;
+  - `03_dim_codigos.sql` → `04_`;
+  - `02_dim_usuario.sql` → `03_`.
+
+  Use plain `mv` for the untracked `07_fato_venda.sql` → `08_fato_venda.sql`. Contents are
+  unchanged. Afterwards, `ls src/pipeline/03_gold` shows `01_`, `03_` to `08_`.
+- [X] T044 [US1] Create `src/pipeline/03_gold/02_vw_gold_dim_usuario_tb_venda.sql`
+  (research, Decisions 10 and 11).
+  - **Header in Portuguese**:
+    - "Camada gold: view do fluxo AUTO CDC de usuários inferidos de dim_usuario";
+    - users that `silver.tb_venda` references and `silver.tb_usuario` does not hold (silver
+      rejected them) get an inferred row: Kimball's inferred member, so that a fact's
+      lookup always finds the user;
+    - the key uses the same expression as the users view;
+    - `Desconhecido` labels, `origem` from the sale;
+    - sequence `1900-01-02`: newer than the members snapshot (1900-01-01), so a full
+      refresh does not delete them, and older than any silver row, so a real row replaces
+      the inferred one with the same key;
+    - users seen only in accesses get no row (owner).
+  - **Body**:
+
+    ```sql
+    CREATE TEMPORARY VIEW vw_gold_dim_usuario_tb_venda
+    COMMENT 'Usuários que as vendas referenciam e silver.tb_usuario não tem (inferidos), no formato do fluxo AUTO CDC de dim_usuario.'
+    AS
+    SELECT
+      xxhash64(v.usuario_uuid) & 9223372036854775807 AS sk_usuario,
+      v.usuario_uuid,
+      'Desconhecido' AS nome_usuario,
+      'Desconhecido' AS email_usuario,
+      CAST(NULL AS INT) AS idade_usuario,
+      'Desconhecido' AS sexo_usuario,
+      'Desconhecido' AS estado_usuario,
+      'Desconhecido' AS profissao_usuario,
+      'Desconhecido' AS empresa_usuario,
+      v.origem,
+      current_timestamp() AS data_carga,
+      TIMESTAMP'1900-01-02' AS data_carga_silver
+    FROM STREAM(workspace.silver.tb_venda) AS v
+    LEFT JOIN workspace.silver.tb_usuario AS u
+      ON u.usuario_uuid = v.usuario_uuid
+    WHERE u.usuario_uuid IS NULL
+      AND v.usuario_uuid IS NOT NULL
+    ```
+
+    The columns are in the order of `01_vw_gold_dim_usuario_tb_usuario.sql`.
+- [X] T045 [US1] In `src/pipeline/03_gold/03_dim_usuario.sql`:
+  - **Header**: add one line saying the dimension also receives inferred users from
+    `vw_gold_dim_usuario_tb_venda`.
+  - **New flow**, after the users flow and before the members flow, with a Portuguese
+    comment ("Usuários inferidos: vendas cujo usuário silver não tem; uma linha real
+    posterior substitui a inferida com a mesma chave"):
+
+    ```sql
+    CREATE FLOW gold_dim_usuario_tb_venda_flow AS AUTO CDC INTO workspace.gold.dim_usuario
+    FROM STREAM(vw_gold_dim_usuario_tb_venda)
+    KEYS (usuario_uuid)
+    SEQUENCE BY data_carga_silver
+    COLUMNS * EXCEPT (data_carga_silver)
+    STORED AS SCD TYPE 1;
+    ```
+
+  - Change nothing else in the file.
+- [X] T046 [US1] Switch the workspace over.
+  - Delete the six old names: `databricks workspace delete $WS/03_gold/<name>` for
+    `02_dim_usuario.sql`, `03_dim_codigos.sql`,
+    `04_vw_gold_dim_curso_dados_database.sql`, `05_vw_gold_dim_curso_membros.sql`,
+    `06_dim_curso.sql` and `07_fato_venda.sql`.
+  - Upload `src/pipeline`.
+  - Confirm `databricks workspace list $WS/03_gold` shows exactly `01_` to `08_`, each
+    identical to the repository.
+  - Run a dry run and expect `COMPLETED`.
+  - On a rejection, restore the previous state: rename back, remove the view and the flow,
+    re-upload, and confirm with a dry run. Then STOP and report to the owner.
+- [X] T047 [US1] At least 4 minutes after the last update, run a **real** ordinary update
+  and expect `COMPLETED` (the contract: a dry run is not proof). Record the update id. Then
+  run the quickstart 6 "After the update" queries:
+  - `linhas` 945,598, `chaves` 945,598, `inferidos` 4,362, `membros` 2;
+  - `vendas_sem_usuario` 0;
+  - `origem_errada` 0, `chave_errada` 0, `rotulo_errado` 0.
+
+  **Stop condition**: if the update fails, rows are missing, or silver users changed, STOP,
+  restore as in T046 and report. Never refresh.
+- [X] T048 [US2] Key stability.
+  - The silver-users checksum of T042 is unchanged.
+  - At least 4 minutes after T047, run another ordinary update and expect `COMPLETED`. The
+    full `dim_usuario` checksum and row count are unchanged from T047, and the new flow
+    reads 0 new rows.
+- [X] T049 [US1] Confirm `fato_venda` is unchanged by this phase: 420,472 rows,
+  `sk_usuario = -1` for 4,362, and checksum 736219987002 (T042). Its keys are resolved
+  once; switching it to inner joins is feature 013's revision.
+- [X] T050 [P] In `doc/pipeline-reference.md`:
+  - **`### dim_usuario`**:
+    - the third flow `gold_dim_usuario_tb_venda_flow` and its view
+      [02_vw_gold_dim_usuario_tb_venda.sql](../src/pipeline/03_gold/02_vw_gold_dim_usuario_tb_venda.sql);
+    - the inferred-user rule (sales only, `Desconhecido` labels, `origem` from the sale,
+      sequence 1900-01-02, replaced by a real row under the same key);
+    - coverage: every sale's user has a row;
+    - counts on the T047 date: 945,598 (941,234 silver + 4,362 inferred + 2 members).
+  - **File links**: replace every old one, `02_dim_usuario.sql` → `03_dim_usuario.sql`,
+    `03_dim_codigos.sql` → `04_`, `04_vw_gold_dim_curso_dados_database.sql` → `05_`,
+    `05_vw_gold_dim_curso_membros.sql` → `06_`, `06_dim_curso.sql` → `07_` and
+    `07_fato_venda.sql` → `08_`.
+  - **`### fato_venda`**: add one sentence: "the 4,362 `-1` users now exist as inferred
+    users in `dim_usuario`; existing sales keep `-1` until feature 013's revision".
+- [X] T051 [P] In `doc/architecture.md`:
+  - replace the same old file names in every link;
+  - add [02_vw_gold_dim_usuario_tb_venda.sql](../src/pipeline/03_gold/02_vw_gold_dim_usuario_tb_venda.sql)
+    to the "Deterministic surrogate key" row;
+  - add a row "Inferred dimension members (Kimball) through a third `AUTO CDC` flow" pointing
+    to it and to `03_dim_usuario.sql`;
+  - in the mermaid graph, add `S4 --> G1`.
+- [X] T052 [P] In `doc/README.md`:
+  - **`03_gold/` layout**: renumber the lines, and add `02_vw_gold_dim_usuario_tb_venda.sql`
+    ("Flow view: inferred users from sales").
+  - **"Pipeline datasets"**: gold becomes "4 streaming views, 3 streaming tables and 1
+    materialized view".
+- [X] T053 [P] In `doc/known-issues.md`, replace any old gold file name. In the
+  `obt_acesso` bullet, note that `dim_usuario` now covers every sale's user, but not users
+  seen only in accesses.
+- [X] T054 Final validation:
+  - `grep -rn` for the six old names in `doc/` and `src/` finds nothing;
+  - the workspace `03_gold` holds `01_` to `08_`, identical to the repository;
+  - quickstart 6 "After the update" passes;
+  - counts of `tb_usuario` (941,234), `tb_venda` (420,472), `dim_codigos` (62),
+    `dim_curso` (5) and `fato_venda` (420,472) are unchanged;
+  - the pipeline is `IDLE`;
+  - stop the warehouse with `--no-wait`.
+- [X] T055 Constitution review of `02_vw_gold_dim_usuario_tb_venda.sql` and
+  `03_dim_usuario.sql`:
+  - current syntax only;
+  - `STREAM(` only on `tb_venda`; `tb_usuario` read static;
+  - the key expression identical to `01_vw_gold_dim_usuario_tb_usuario.sql`;
+  - three flows with identical `KEYS`;
+  - no constraints, no `UNION`, no `CLUSTER BY` / `PARTITIONED BY`;
+  - comments in Portuguese.
+
+  Record the outcome, the update ids and the counts in "Implementation notes, Phase 13" at
+  the end of this file.
+
+### Phase 13 dependencies
+
+- **Order**: T042 → T043 → T044 → T045 → T046 → T047 → T048, then T049.
+- T050–T053 touch different files and can run in parallel after T047, because the counts
+  are known by then.
+- T054 runs after them; T055 runs last.
+- Two updates, at least 4 minutes apart.
+
+## Implementation notes, Phase 13
+
+### 2026-11-06
+
+**T042**: the pipeline was `IDLE`. Baseline:
+- `dim_usuario`: 941,236 rows, checksum -482795858800;
+- silver users only (941,234 rows, none named `Desconhecido`): checksum -484022488009;
+- `faltantes`: 4,362;
+- `fato_venda`: 420,472 rows, `sk_usuario = -1` for 4,362, checksum 736219987002.
+
+**T043**: `git mv` for all six files, from the highest number down. All six were already
+committed, including `07_fato_venda.sql`.
+
+**T044–T045**: `02_vw_gold_dim_usuario_tb_venda.sql` was created, and
+`gold_dim_usuario_tb_venda_flow` was added to `03_dim_usuario.sql`. The table's `COMMENT` was
+left as it was, per T045 ("change nothing else"). It still says "um registro por usuário de
+silver.tb_usuario"; a later edit can mention the inferred users.
+
+**T046**: the six old names were deleted from the workspace and the files uploaded. `03_gold`
+holds exactly `01_` to `08_`, each identical to the repository. Dry run `61f21765`
+**COMPLETED**.
+
+**T047**: real update `4d2eebb5-3b1c-4ed6-964f-50d3dd828b93` **COMPLETED** (ordinary). The
+three-flow combination (users, inferred users, members snapshot; SCD type 1) is accepted.
+- `linhas` 945,598, `chaves` 945,598, `inferidos` 4,362, `membros` 2.
+- `vendas_sem_usuario` 0.
+- `origem_errada` 0, `chave_errada` 0, `rotulo_errado` 0.
+- Silver-users checksum -484022488009, unchanged from T042.
+
+**T048**: update `5156d11d-413a-48b8-82c9-933ddc6b5d14` **COMPLETED**, with no change. The full
+checksum -413324606090 and the 945,598 rows are identical to T047's.
+
+**T049**: `fato_venda` is unchanged: 420,472 rows, `sk_usuario = -1` for 4,362, checksum
+736219987002. Its keys are resolved once; feature 013's revision moves those sales to their
+inferred users.
+
+**T050–T053**: documentation updated.
+- Every old file name is replaced in `doc/`.
+- `pipeline-reference.md`: `dim_usuario` covers the third flow, the inferred-user rule, coverage
+  and counts; `fato_venda` notes the 4,362.
+- `architecture.md`: deterministic-key row, a new inferred-members row, and the graph edge
+  `S4 --> G1`.
+- `README.md`: layout and gold count (4 streaming views, 3 streaming tables, 1 materialized
+  view).
+- `known-issues.md`: the `obt_acesso` bullet.
+
+**T054**: no old name remains in `doc/` or `src/`, and the workspace `03_gold` matches the
+repository. Counts:
+
+| Dataset | Rows |
+|---|---|
+| `tb_usuario` | 941,234 |
+| `tb_venda` | 420,472 |
+| `dim_codigos` | 62 |
+| `dim_curso` | 5 |
+| `fato_venda` | 420,472 |
+
+`vendas_sem_usuario` is 0. The pipeline is `IDLE`; the warehouse is stopped.
+
+**T055**: the view reads `STREAM(` only on `tb_venda` and `tb_usuario` as static, with no
+`UNION` and no constraints.
+- `03_dim_usuario.sql` has three flows, each with `KEYS (usuario_uuid)`. Its only `UNION` is the
+  members snapshot's literal rows (unchanged).
+- The key expression matches the users view, with the alias `v.` that the join requires.
+- No full refresh, drop or generator run.
+
+---
+
+## Phase 14: Undo the inferred users (owner, 2026-11-06)
+
+The owner decided that `dim_usuario` holds only the users silver delivers, plus the members
+(spec, Clarifications 2026-11-06). Phase 13 is reverted, and the 4,362 placeholder rows are
+cleared by a full refresh of `dim_usuario` only, which the owner approved.
+
+- [X] T056 Record the baseline without inferred rows: 941,236 rows; checksum of every column
+  except `data_carga` = 490186792805.
+- [X] T057 Restore the repository to the committed state with
+  `git restore --staged src/pipeline/03_gold doc` and `git restore src/pipeline/03_gold doc`,
+  then delete the untracked new names. `src/pipeline/03_gold` holds `01_`–`07_` again;
+  `02_dim_usuario.sql` has no inferred-users flow; the four docs are back to their committed
+  text.
+- [X] T058 In the workspace, delete `02_vw_gold_dim_usuario_tb_venda.sql` and the six renamed
+  names `03_`–`08_`, then upload. `03_gold` holds exactly `01_`–`07_`, each identical to the
+  repository.
+- [X] T059 Run a dry run with `full_refresh_selection = ["workspace.gold.dim_usuario"]`: `485d2fb0`
+  **COMPLETED**. Then run the update with the same selection: `8d27cdf5-e074-48da-9c74-50c762d19c51`
+  **COMPLETED** (`full_refresh` false, so only `dim_usuario` was refreshed).
+- [X] T060 Verify:
+  - `dim_usuario` has 941,236 rows, 941,236 distinct keys, 0 inferred rows and 2 members;
+  - the checksum without `data_carga` is 490186792805, equal to T056, so every key and
+    attribute is unchanged;
+  - 4,362 sales again have no user row (expected);
+  - `tb_usuario` has 941,234 rows;
+  - `fato_venda` is unchanged: 420,472 rows, checksum 736219987002, with `sk_usuario = -1` for
+    4,362 through its left join;
+  - the pipeline is `IDLE`; the warehouse is stopped.
+- [X] T061 Record the reversal:
+  - spec: a Clarifications bullet for 2026-11-06; FR-013 and the inferred-user entity removed;
+    FR-003, SC-001, SC-006 and the edge case restored;
+  - undo notes at the head of the 2026-11-05 sections of plan, research and quickstart;
+  - data model and contract corrected.
+
+`data_carga` of every `dim_usuario` row now carries the refresh time.

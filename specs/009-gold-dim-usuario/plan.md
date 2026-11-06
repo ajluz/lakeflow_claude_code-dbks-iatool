@@ -9,6 +9,14 @@
 
 ## Revision 2026-11-05: inferred users
 
+**Undone 2026-11-06 (owner).** The inferred-users revision below was implemented (update
+`4d2eebb5`) and then reverted. The view `vw_gold_dim_usuario_tb_venda` and the flow
+`gold_dim_usuario_tb_venda_flow` were removed, and the gold files are back to `01_`–`07_`. A full
+refresh of `dim_usuario` only (update `8d27cdf5`, approved by the owner) cleared the 4,362
+placeholder rows. `dim_usuario` is back to 941,236 rows with unchanged keys. The text that follows
+is kept as history.
+
+
 Spec FR-013 (owner, 2026-11-05) adds an inferred row for every user that sales reference
 and silver lacks: 4,362 today. With them, every sale's user has a row, so `fato_venda` can
 inner-join `dim_usuario` (constitution v3.1.0, Principle V).

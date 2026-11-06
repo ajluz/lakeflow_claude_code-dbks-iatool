@@ -96,6 +96,14 @@ still 941,236.
 
 ## 6. Inferred users (2026-11-05, FR-013)
 
+**Undone 2026-11-06 (owner).** The inferred-users revision below was implemented (update
+`4d2eebb5`) and then reverted. The view `vw_gold_dim_usuario_tb_venda` and the flow
+`gold_dim_usuario_tb_venda_flow` were removed, and the gold files are back to `01_`–`07_`. A full
+refresh of `dim_usuario` only (update `8d27cdf5`, approved by the owner) cleared the 4,362
+placeholder rows. `dim_usuario` is back to 941,236 rows with unchanged keys. The text that follows
+is kept as history.
+
+
 ### Before the change
 
 Record the current dimension:

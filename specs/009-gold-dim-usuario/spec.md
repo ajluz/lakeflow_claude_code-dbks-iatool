@@ -26,8 +26,12 @@
 
 ### Session 2026-11-05
 
-- Q: Which users that silver rejected should get an inferred row in `dim_usuario` (a placeholder row keyed like any other user, so a fact's inner join always finds it)? → A: Only users referenced by sales (`silver.tb_venda`) but missing from `silver.tb_usuario`, 4,362 on 2026-11-05. Users seen only in accesses get none (owner).
-- Q: What do an inferred user's descriptive columns hold? → A: `Desconhecido` in every text attribute (`nome_usuario`, `email_usuario`, `sexo_usuario`, `estado_usuario`, `profissao_usuario`, `empresa_usuario`), an empty `idade_usuario`, and `origem` set to the source that referenced the user (`API` for all 4,362 today) (owner).
+- Q: Which users that silver rejected should get an inferred row in `dim_usuario` (a placeholder row keyed like any other user, so a fact's inner join always finds it)? → A: Only users referenced by sales (`silver.tb_venda`) but missing from `silver.tb_usuario`, 4,362 on 2026-11-05. Users seen only in accesses get none (owner). *(Superseded on 2026-11-06, below.)*
+- Q: What do an inferred user's descriptive columns hold? → A: `Desconhecido` in every text attribute (`nome_usuario`, `email_usuario`, `sexo_usuario`, `estado_usuario`, `profissao_usuario`, `empresa_usuario`), an empty `idade_usuario`, and `origem` set to the source that referenced the user (`API` for all 4,362 today) (owner). *(Superseded on 2026-11-06, below.)*
+
+### Session 2026-11-06
+
+- Q: Should `dim_usuario` keep the inferred users added on 2026-11-05? → A: No. The change is undone (owner): `dim_usuario` holds the users silver delivers, plus the two members; users that silver rejected are not added. The view, the third flow and FR-013 are removed, and the 4,362 placeholder rows were cleared by a full refresh of `dim_usuario` only, approved by the owner. Sales whose user is not in the dimension resolve to `-1` in the fact through a left join (the 2026-11-05 answers above are superseded).
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -107,12 +111,9 @@ each recognizable by its attributes.
 
 ### Edge Cases
 
-- **A sale references a user that silver rejected.** The user gets an inferred row
-  (FR-013), so the sale finds a row. If silver later accepts the user, the real values
-  replace the placeholders under the same key.
-- **A sale with an empty `usuario_uuid`.** No inferred row can be keyed on it. There are none
-  on 2026-11-05. Resolving such a sale, for example to `-1`, is the fact's concern (feature
-  013).
+- **A sale references a user that silver rejected.** The dimension has no row for that user
+  (2026-11-06: no inferred users). The fact resolves the sale to `-1` through a left join, so
+  no sale is lost.
 - **A user reappears in silver with changed attributes.** Silver appends and does not
   merge (feature 006), so today each key occurs once. If a key ever occurred twice, the
   dimension would still hold one row per key (SCD type 1: latest values win) and keep its
@@ -149,8 +150,8 @@ each recognizable by its attributes.
   | `origem` | STRING | record source (`API`, `ARQUIVO`) |
   | `data_carga` | TIMESTAMP | time gold last wrote the row; never silver's `data_carga` |
 
-- **FR-003**: The dimension MUST hold one row per `usuario_uuid` of silver, plus one
-  inferred row per user of FR-013, plus the two members of FR-007. Its grain is one user.
+- **FR-003**: The dimension MUST hold one row per `usuario_uuid` of silver, plus the two
+  members of FR-007. Its grain is one user.
 - **FR-004**: The dimension MUST be SCD type 1, applied by `AUTO CDC ... STORED AS SCD TYPE
   1`, keyed on `usuario_uuid` and sequenced by silver's `data_carga`: a user's attributes
   are the latest values in silver, and no history is kept.
@@ -175,25 +176,10 @@ each recognizable by its attributes.
   described in the project documentation, replacing the earlier pipeline's description
   of `dim_usuario`.
 
-- **FR-013**: The dimension MUST hold an **inferred row** for every `usuario_uuid` that
-  `silver.tb_venda` references and `silver.tb_usuario` does not hold (owner, 2026-11-05).
-  This is Kimball's inferred member, so that a fact's lookup on `usuario_uuid` always finds a
-  row (constitution v3.1.0, Principle V: inner joins need coverage). Rules:
-  - its key follows FR-005: `xxhash64(usuario_uuid)` with the sign bit cleared, positive,
-    and never changed;
-  - its attributes: `Desconhecido` in every text attribute, an empty `idade_usuario`, and
-    `origem` = the record source of the sale that references the user (`API` today). An
-    inferred row is recognised by a positive key with `nome_usuario = 'Desconhecido'`;
-  - users referenced only by `silver.tb_acesso` get no inferred row;
-  - if silver later delivers the user, the real row replaces the inferred one in place, with
-    the same key.
-
 ### Key Entities
 
 - **User dimension row**: one user known to silver, with surrogate key, business key and
   descriptive attributes.
-- **Inferred user**: a user that sales reference but silver rejected. It has a real key,
-  and its attributes are placeholders until silver delivers the user.
 - **Default member**: the "unknown" or "not applicable" user, a fixed row that facts point
   to when a user is missing or does not apply.
 
@@ -201,8 +187,8 @@ each recognizable by its attributes.
 
 ### Measurable Outcomes
 
-- **SC-001**: Rows in `dim_usuario` = distinct users in `silver.tb_usuario` + inferred
-  users + 2, with a difference of 0 (941,234 + 4,362 + 2 = 945,598 on 2026-11-05).
+- **SC-001**: Rows in `dim_usuario` = distinct users in `silver.tb_usuario` + 2, with a
+  difference of 0 (941,236 on 2026-11-06).
 - **SC-002**: 0 rows have an empty `sk_usuario` or `usuario_uuid`; no two rows share
   either.
 - **SC-003**: For 100% of silver users, the dimension's attributes equal silver's.
@@ -210,9 +196,9 @@ each recognizable by its attributes.
   surrogate keys are unchanged, including the two members', and 100% of rows keep the same
   `data_carga`.
 - **SC-005**: Exactly 1 "unknown" row and 1 "not applicable" row exist.
-- **SC-006**: 100% of `usuario_uuid` values referenced by silver sales have a row in the
-  dimension: an anti join of `silver.tb_venda` against `dim_usuario` on `usuario_uuid` returns
-  0 rows. The 4,362 previously absent users are inferred rows.
+- **SC-006**: 100% of `usuario_uuid` values referenced by silver sales either have a row
+  or, when absent (4,362 on 2026-11-06, users silver rejected), resolve to the "unknown"
+  member in the fact.
 
 ## Assumptions
 

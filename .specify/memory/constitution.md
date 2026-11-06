@@ -1,40 +1,44 @@
 <!--
 SYNC IMPACT REPORT (scratch material for review; remove before committing)
 
-Version change: 2.0.0 → 3.0.0
-Bump rationale: MAJOR. Principle V is redefined in a backward-incompatible way for facts. It
-required every fact to be a materialized view, and it now requires facts to be streaming
-tables fed from silver, with stream-static dimension lookups.
-Owner, 2026-11-05 (feature 013): adopt the Databricks dimensional-modeling guidance, "facts are
-streaming tables fed from silver; their dimension lookups are stream-static joins"
-(https://docs.databricks.com/aws/en/ldp/best-practices/dimensional-modeling).
+Version change: 3.0.0 → 3.1.0
+Bump rationale: MINOR. Principle V's rule for fact lookups is relaxed and expanded. v3.0.0
+allowed only left outer joins coalesced to the unknown member, and forbade inner joins (a
+clause added when v3.0.0 was drafted, not requested by the owner). v3.1.0 also allows inner
+joins when the dimension guarantees coverage, proven by query. The invariant that a fact never
+loses a row is unchanged. Existing code stays compliant.
+Owner, 2026-11-05 (feature 013): "reword Principle V to allow inner joins in a fact's lookups
+when each dimension guarantees coverage. Facts must still never lose a row."
 
 Modified principles:
-- V. Dataset Types and Flows That Fit the Source:
-  - "facts" is removed from the materialized-view list of the Gold bullet;
-  - new bullet "Facts are streaming tables": an append-only silver source; stream-static,
-    left-outer lookups coalesced to the unknown member; no inner join; keys frozen when the
-    row is written, stated in the plan, re-resolved only by an approved full refresh;
-  - rationale extended for facts.
+- V. Dataset Types and Flows That Fit the Source, bullet "Facts are streaming tables":
+  - the left-outer-only rule and "An inner join MUST NOT be used in a fact's query" are
+    replaced by: no fact row is ever lost; an inner join when the dimension guarantees
+    coverage (named in the plan, verified by an anti join returning 0 rows); otherwise a left
+    outer join coalesced to `-1`; after every load, the fact's row count equals its source's;
+  - rationale extended for inner joins and coverage.
 
-Unchanged: Principle I (facts reconcile with silver) and Principle VII (surrogate keys, members,
-version in effect for SCD type 2) already apply to the fact's lookups.
+Unchanged: Principle I (facts reconcile with silver; unmatched lookups resolve to a member)
+and Principle VII (members, no null foreign keys). Inner joins rely on coverage, not
+coalescing, to meet them.
 
 Added sections: none
 Removed sections: none
 
 Dependent templates: not modified by this command; they read the constitution at runtime.
 
-Affected files: no code becomes non-compliant, because no fact exists yet. Feature 013
-(`specs/013-gold-fato-venda/`) plans `fato_venda` as a materialized view. Its plan, research
-(Decision 1), data model, contract, quickstart and tasks must be revised to a streaming table
-before implementation.
+Affected files: none become non-compliant. `src/pipeline/03_gold/07_fato_venda.sql` (feature
+013) uses left outer joins with `-1`, which stay allowed. Switching it to inner joins needs, per
+dimension, a coverage guarantee in the plan and a 0-row anti join:
+- `dim_codigos`, `dim_tempo` and `dim_curso`: 0 uncovered sales on 2026-11-05;
+- `dim_usuario`: 4,362 uncovered sales (users rejected by silver). This needs inferred members
+  (feature 009), or a left outer join for this dimension only.
 
 Follow-up TODOs:
-- Feature 013: re-plan `fato_venda` as a streaming table, and settle in the spec what happens
-  to sales written before their dimension row exists.
-- Earlier suggestion, not part of this amendment: reword Principle I's course exceptions
-  ("carry the same price type and record source"; `dim_curso` as a reader of the feed).
+- Feature 013: decide the join form per dimension. If any changes to an inner join, revise the
+  spec, plan and tasks, and record the coverage proof.
+- Feature 009: inferred members in `dim_usuario`, if `sk_usuario` is to be inner-joined.
+- Earlier suggestion, still open: reword Principle I's course exceptions.
 - Commit this amendment (remove this report first).
 - No deferred placeholders.
 -->
@@ -227,9 +231,20 @@ The dataset type follows from the nature of the source, not from habit.
     stream.
   - Dimension lookups MUST be **stream-static joins**: the stream is on the left, and the
     dimensions and any other lookup tables are read without `STREAM`.
-  - Each lookup MUST be a left outer join whose key is coalesced to the "unknown" member,
-    so that no fact row is dropped (Principles I and VII). An inner join MUST NOT be used
-    in a fact's query.
+  - **No fact row is ever lost.** Every lookup MUST resolve every fact row to a dimension
+    row, so the fact's row count equals its silver source's, apart from exclusions
+    documented in `doc/pipeline-reference.md` (Principles I and VII). Each lookup takes one
+    of two forms:
+    - **Inner join, when the dimension guarantees coverage.** Every natural key the fact
+      can carry has a row in the dimension: a real row, a default member, or an inferred
+      member. The plan MUST name each inner-joined dimension and state how its coverage is
+      guaranteed. The guarantee MUST be verified by query before the change is accepted:
+      an anti join of the silver source against the dimension on the lookup key returns
+      0 rows. This is Kimball's surrogate key pipeline, where every lookup succeeds.
+    - **Left outer join, for a dimension that cannot guarantee coverage.** The key is
+      coalesced to the "unknown" member (`-1`).
+  - After every load, the fact's row count MUST equal its source's. An inner join that
+    removes rows is a violation, whatever the plan claimed about coverage.
   - A fact row's keys are resolved once, when the row is processed. A dimension row that
     arrives later does not change fact rows already written; they keep the member they
     were given. Each fact's plan MUST state this, and only a full refresh, approved by
@@ -266,7 +281,9 @@ is wrong: an aggregate in a streaming table that never recomputes when its sourc
 changes. Facts are the opposite case: each fact row is an event that arrives once, so a
 streaming table processes each sale once instead of recomputing every sale on every
 update. The cost is that keys are frozen when the row is written, which is why the
-unknown member and the plan's statement are required.
+unknown member and the plan's statement are required. An inner join is the natural Kimball
+lookup once a dimension covers every key the fact can carry. Coverage is proven, not assumed,
+because an inner join that misses a key loses the row without any error.
 
 ### VI. Record Source and Hash Keys in Silver
 
@@ -496,4 +513,4 @@ this repository.
   `databricks-pipelines` skill gives syntax and patterns. Both inform implementation;
   neither overrides this document.
 
-**Version**: 3.0.0 | **Ratified**: 2026-10-10 | **Last Amended**: 2026-11-05
+**Version**: 3.1.0 | **Ratified**: 2026-10-10 | **Last Amended**: 2026-11-05

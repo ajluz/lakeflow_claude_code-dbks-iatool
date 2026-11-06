@@ -57,7 +57,7 @@ stability. Neither update is a full refresh.
 
 **Purpose**: confirm the environment the plan assumes.
 
-- [ ] T001 Confirm the preconditions:
+- [X] T001 Confirm the preconditions:
   - the pipeline is `IDLE`;
   - `databricks tables get workspace.gold.fato_venda --profile databricks-free` reports
     that the table does not exist;
@@ -88,7 +88,7 @@ stability. Neither update is a full refresh.
 
 **Purpose**: the documented grain (required before the build) and the file's declaration.
 
-- [ ] T002 Rewrite `### fato_venda` in `doc/pipeline-reference.md` **before** any upload
+- [X] T002 Rewrite `### fato_venda` in `doc/pipeline-reference.md` **before** any upload
   (Principle VII: the grain is stated before the fact is built; FR-013).
   - **Header**: link to
     [07_fato_venda.sql](../src/pipeline/03_gold/07_fato_venda.sql), "streaming table
@@ -115,7 +115,7 @@ stability. Neither update is a full refresh.
   - **Status**: write "Planned (feature 013)" for now; T012 changes it to "As built".
   - **Remove** the old text "Sales are first joined to `silver.tb_acesso` … All joins are
     inner joins."
-- [ ] T003 Create `src/pipeline/03_gold/07_fato_venda.sql` with:
+- [X] T003 Create `src/pipeline/03_gold/07_fato_venda.sql` with:
   - **Header comment in Portuguese**, in the style of
     `src/pipeline/03_gold/03_dim_codigos.sql`:
     - "Camada gold: fato de vendas (fato_venda)";
@@ -149,7 +149,7 @@ US1–US3.
 **Independent Test**: quickstart step 2. `linhas_fato` = `linhas_silver` = 420,472;
 `dif_pago` and `dif_desconto` are 0.00.
 
-- [ ] T004 [US1] In `src/pipeline/03_gold/07_fato_venda.sql`, write CTE `vendas`
+- [X] T004 [US1] In `src/pipeline/03_gold/07_fato_venda.sql`, write CTE `vendas`
   (research, Decision 3), with one row per sale:
   - **Source**:
     `FROM STREAM(workspace.silver.tb_venda) AS v LEFT JOIN workspace.silver.tb_acesso AS a ON v.origem = 'API' AND a.acesso_uuid = v.acesso_uuid`.
@@ -165,7 +165,7 @@ US1–US3.
     tb_venda. LEFT JOIN: vendas sem acesso e vendas de arquivo continuam no fato."
   - If the dry run (T008) rejects a CTE over a stream, inline `vendas` as a subquery in the
     final `FROM` instead (plan, Design Notes).
-- [ ] T005 [US1] Write the final `SELECT` in `src/pipeline/03_gold/07_fato_venda.sql`:
+- [X] T005 [US1] Write the final `SELECT` in `src/pipeline/03_gold/07_fato_venda.sql`:
   - `FROM vendas AS s`, then the four `LEFT JOIN`s of T006 and T007;
   - columns, in exactly this order (FR-002): `coalesce(t.sk_tempo, -1) AS sk_tempo`,
     `coalesce(c.sk_codigos, -1) AS sk_codigos`, `coalesce(k.sk_curso, -1) AS sk_curso`,
@@ -183,7 +183,7 @@ complete the joins.
 
 **Independent Test**: quickstart step 3, with the star join returning 420,472 rows.
 
-- [ ] T006 [US2] In `src/pipeline/03_gold/07_fato_venda.sql`, add the date, user and course
+- [X] T006 [US2] In `src/pipeline/03_gold/07_fato_venda.sql`, add the date, user and course
   lookups (research, Decisions 4 and 5).
   - **CTE `versoes_curso`**, placed after `vendas`:
 
@@ -223,7 +223,7 @@ complete the joins.
 **Independent Test**: quickstart step 4. `ARQUIVO` appears only with `Não se aplica`
 (200,000); `API` with `Desconhecido` has 2,174 sales.
 
-- [ ] T007 [US3] In `src/pipeline/03_gold/07_fato_venda.sql`, complete the codes
+- [X] T007 [US3] In `src/pipeline/03_gold/07_fato_venda.sql`, complete the codes
   (research, Decision 3).
   - In CTE `vendas`:
     - `CASE WHEN v.origem = 'ARQUIVO' THEN 'Não se aplica' ELSE coalesce(a.local_acesso, 'Desconhecido') END AS local_acesso`;
@@ -241,7 +241,7 @@ complete the joins.
 
   - Portuguese comment: "mesmas regras de dim_codigos; venda de ARQUIVO não tem acesso:
     Não se aplica".
-- [ ] T008 [US3] Upload `src/pipeline` and confirm the workspace copy is identical. Run a dry
+- [X] T008 [US3] Upload `src/pipeline` and confirm the workspace copy is identical. Run a dry
   run and expect `COMPLETED`. Then start an update (not a full refresh) and expect
   `COMPLETED`, with `fato_venda` created as `STREAMING_TABLE`
   (`databricks tables get workspace.gold.fato_venda`) and no failed flow. Record the update
@@ -253,14 +253,14 @@ complete the joins.
 
 ## Validation per story
 
-- [ ] T009 [US1] Run quickstart step 2.
+- [X] T009 [US1] Run quickstart step 2.
   - `linhas_fato` 420,472 = `linhas_silver`;
   - `dif_pago` 0.00 and `dif_desconto` 0.00, against T001's sums;
   - `DESCRIBE workspace.gold.fato_venda` lists exactly `sk_tempo`, `sk_codigos`,
     `sk_curso` and `sk_usuario` as `bigint`, then `valor_desconto` and `valor_pago` as
     `decimal(9,2)`;
   - `SHOW TBLPROPERTIES workspace.gold.fato_venda ('quality')` returns `gold`.
-- [ ] T010 [US2] Run quickstart step 3 and step 5.
+- [X] T010 [US2] Run quickstart step 3 and step 5.
   - **Step 3**: `vazias` 0, `tempo_desconhecido` 0, `codigos_desconhecido` 0,
     `curso_desconhecido` 0, `usuario_desconhecido` 4,362, `cursos` 3, `combinacoes` 22.
     The star join returns 420,472 rows.
@@ -268,7 +268,7 @@ complete the joins.
   - **Cross-check** of the user `-1` count against silver:
     `SELECT count(*) FROM workspace.silver.tb_venda v LEFT ANTI JOIN workspace.gold.dim_usuario u ON u.usuario_uuid = v.usuario_uuid`
     = 4,362.
-- [ ] T011 [US3] Run quickstart step 4.
+- [X] T011 [US3] Run quickstart step 4.
   - `ARQUIVO` appears only with `Não se aplica`, 200,000 sales;
   - `API` never appears with `Não se aplica`;
   - `API` with `Desconhecido` has 2,174 sales.
@@ -285,14 +285,14 @@ complete the joins.
 
 **Purpose**: stability, documentation and final checks.
 
-- [ ] T012 Record
+- [X] T012 Record
   `count(*), sum(hash(sk_tempo, sk_codigos, sk_curso, sk_usuario, valor_desconto, valor_pago))`
   of `workspace.gold.fato_venda`.
   - At least 4 minutes after T008, run an ordinary update with no change and expect
     `COMPLETED`.
   - Repeat the query; both values must be identical.
   - In the event log, the fact's flow reads 0 new rows, so no sale is processed twice.
-- [ ] T013 [P] In `doc/pipeline-reference.md`:
+- [X] T013 [P] In `doc/pipeline-reference.md`:
   - **`### fato_venda`**:
     - change the status from "Planned (feature 013)" to "As built";
     - add the counts on 2026-11-05: 420,472 rows; sums equal to silver's;
@@ -303,30 +303,30 @@ complete the joins.
       version: sales already written are not reprocessed.
   - **Intro paragraph**: add `fato_venda` to the list of Gold sections that describe the
     pipeline as built.
-- [ ] T014 [P] In `doc/known-issues.md`, delete the whole `## Sales missing from fato_venda`
+- [X] T014 [P] In `doc/known-issues.md`, delete the whole `## Sales missing from fato_venda`
   section: fixed by feature 013, which uses `LEFT JOIN`s and the `-1` member.
   - Keep any sentence about `obt_acesso`'s left join that still applies, moved to
     "Smaller items" as one bullet: "`obt_acesso` (earlier pipeline) still uses a left join
     for access rows; to be rebuilt".
-- [ ] T015 [P] In `doc/architecture.md`, features table:
+- [X] T015 [P] In `doc/architecture.md`, features table:
   - remove [04_fato_vendas.sql](../code_tips/03_gold/04_fato_vendas.sql) from the
     "Materialized views" row;
   - add a row "Fact as a streaming table with stream-static lookups (`LEFT JOIN`, `-1`
     fallback; SCD 2 version in effect at the event)" pointing to
     [07_fato_venda.sql](../src/pipeline/03_gold/07_fato_venda.sql).
-- [ ] T016 [P] In `doc/README.md`:
+- [X] T016 [P] In `doc/README.md`:
   - under `03_gold/`, add
     `07_fato_venda.sql            Sales fact: streaming table over tb_venda, stream-static LEFT JOIN lookups with -1`
     as the last entry, moving the `└──` from `06_dim_curso.sql`;
   - in "Pipeline datasets", gold becomes "3 streaming views, 3 streaming tables and 1
     materialized view".
-- [ ] T017 Final validation:
+- [X] T017 Final validation:
   - the workspace `03_gold` holds `01_` through `07_`, each identical to the repository;
   - rerun quickstart steps 2 and 3;
   - step 6 counts are equal to T001;
   - the pipeline is `IDLE`;
   - stop the warehouse with `--no-wait`.
-- [ ] T018 Constitution review of `src/pipeline/03_gold/07_fato_venda.sql`:
+- [X] T018 Constitution review of `src/pipeline/03_gold/07_fato_venda.sql`:
   - `CREATE OR REFRESH STREAMING TABLE`;
   - `STREAM(...)` only on `workspace.silver.tb_venda`, which is on the left of every join;
   - no inner `JOIN`, only `LEFT JOIN`;
@@ -366,3 +366,94 @@ After T012:   T013 (pipeline-reference), T014 (known-issues), T015 (architecture
 4. **Polish**: T012 (stability update), docs, final checks, constitution review.
 
 Pipeline time: two updates, at least 4 minutes apart.
+
+---
+
+## Implementation Notes (2026-11-05)
+
+**T001**: pipeline `IDLE`; `fato_venda` absent; workspace `03_gold` held `01_`–`06_`.
+Baseline:
+
+| Dataset | Rows |
+|---|---|
+| `tb_venda` | 420,472 |
+| `tb_acesso` | 2,516,192 |
+| `dim_tempo` | 3,654 |
+| `dim_usuario` | 941,236 |
+| `dim_codigos` | 62 |
+| `dim_curso` | 5 |
+
+- Silver sums: `valor_pago` 538,722,841.07, `valor_desconto` 33,549,457.70.
+- `acesso_uuid` duplicates in `tb_acesso`: 0.
+- `tb_venda` history operations: `STREAMING UPDATE`, `DLT SETUP`, `CREATE TABLE`,
+  `SET TBLPROPERTIES` and one `DLT REFRESH` (an earlier full refresh of silver). No
+  `DELETE`, `UPDATE` or `MERGE`, so the table is append-only.
+
+**T002**: `### fato_venda` in `doc/pipeline-reference.md` rewritten before the upload, with
+grain, keys, measures, reconciliation, keys resolved once and query joins.
+
+**T003–T007**: `src/pipeline/03_gold/07_fato_venda.sql` written. The CTE form over
+`STREAM(workspace.silver.tb_venda)` was accepted, so no inline fallback was needed.
+
+**T008**: upload identical. Dry run `18aaaebf` **COMPLETED**. Update
+`17a73045-61f7-48c4-839d-4c8d1e92ec58` **COMPLETED** (ordinary). `fato_venda` is a
+`STREAMING_TABLE`.
+
+**T009**: `linhas_fato` 420,472 = `linhas_silver`; `dif_pago` 0.00; `dif_desconto` 0.00.
+`DESCRIBE`: `sk_tempo`, `sk_codigos`, `sk_curso` and `sk_usuario` are `bigint`, then
+`valor_desconto` and `valor_pago` are `decimal(9,2)`. `quality` = `gold`. Exactly 6 columns.
+
+**T010**: `vazias` 0, `tempo_desconhecido` 0, `codigos_desconhecido` 0, `curso_desconhecido`
+0, `usuario_desconhecido` 4,362, `cursos` 3, `combinacoes` 22.
+- The star join with inner joins returns 420,472.
+- Courses:
+
+  | Course | Sales |
+  |---|---|
+  | Construindo um Data Lakehouse com SQL e DLT | 135,659 |
+  | Mastering SQL no Databricks | 114,942 |
+  | Programa Data Heroes | 169,871 |
+
+  Total 420,472. Each sale is on its course's only version (`__START_AT`
+  2026-10-11 22:42:09.713, open), through the first-version fallback.
+- Cross-check: the anti join of `tb_venda` against `dim_usuario` gives 4,362.
+
+**T011**: codes by origin and location:
+
+| Origin | Location | Sales |
+|---|---|---|
+| API | Computador | 102,148 |
+| API | Desconhecido | 2,174 |
+| API | Mobile | 113,846 |
+| API | unknown | 2,304 |
+| ARQUIVO | Não se aplica | 200,000 |
+
+`API` never appears with `Não se aplica`. Cross-check: API sales without an access row,
+2,174.
+
+**T012**: before, 420,472 rows and checksum 736219987002. Update
+`50cd5af3-5689-4873-9fdb-9eadbf2b31ca` **COMPLETED**, with no change. After, the same 420,472
+and 736219987002. The fact's flow progress shows no output rows, so no sale was processed
+twice.
+
+**T013–T016**: documentation updated.
+- `pipeline-reference.md`: status "As built", the counts, the demo note and the intro.
+- `known-issues.md`: "Sales missing from fato_venda" removed; an `obt_acesso` bullet added
+  under "Smaller items".
+- `architecture.md`: the old fact removed from the materialized-views row; a streaming-fact
+  row added.
+- `README.md`: layout and gold count (3 streaming views, 3 streaming tables, 1 materialized
+  view).
+
+**T017**: all seven `03_gold` files are identical in the workspace. Counts are unchanged from
+T001, and `fato_venda` has 420,472 rows. The pipeline is `IDLE`; the warehouse is stopped.
+
+**T018**: `CREATE OR REFRESH STREAMING TABLE`.
+- `STREAM(` appears once, on `workspace.silver.tb_venda`, on the left of every join.
+- 5 `LEFT JOIN`s (`tb_acesso` and the four dimensions) and no inner join.
+- `__END_AT IS NULL` appears only inside the in-effect condition (`k.__END_AT IS NULL OR …`),
+  never as a filter for the current version.
+- No constraints, `CLUSTER BY`, `PARTITIONED BY`, legacy syntax or `CREATE OR REPLACE`.
+- Three-level names, 6 output columns, comments in Portuguese.
+
+No full refresh or table drop was run.

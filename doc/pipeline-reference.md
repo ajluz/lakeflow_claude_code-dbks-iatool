@@ -8,7 +8,7 @@ The Bronze section, and in Silver the views `vw_bronze_dados_api` and
 `vw_silver_tb_usuario_api`, `vw_silver_tb_usuario_files`, `vw_silver_tb_venda_api` and
 `vw_silver_tb_venda_files`, and the sections `temp_tb_validacao_api`, `tb_quarentena`,
 `tb_acesso`, `tb_usuario`, `tb_venda` and `tb_curso`, and in Gold the sections
-`dim_usuario`, `dim_codigos` and `dim_curso` with their flow views, describe the pipeline as it is built today, under [src/pipeline/](../src/pipeline/). The other Silver datasets and the Gold
+`dim_usuario`, `dim_codigos` and `dim_curso` with their flow views, and `fato_venda`, describe the pipeline as it is built today, under [src/pipeline/](../src/pipeline/). The other Silver datasets and the Gold
 section still describe the earlier pipeline, whose `code_tips/` folder is no longer
 in the repository; they will be replaced as those layers are rebuilt.
 
@@ -467,20 +467,52 @@ matching all four; no match → `-1`.
 
 ### fato_venda
 
-[04_fato_vendas.sql](../code_tips/03_gold/04_fato_vendas.sql) — materialized
-view. Sales fact at one row per sale.
+[07_fato_venda.sql](../src/pipeline/03_gold/07_fato_venda.sql) — streaming table
+`workspace.gold.fato_venda` over `STREAM(silver.tb_venda)`; dimensions read static
+(stream-static joins). As built (feature 013).
 
-| Column | Resolved by |
-|---|---|
-| `sk_tempo` | `dim_tempo.data = CAST(data_venda AS DATE)` |
-| `sk_codigos` | the four codes computed by `dim_codigos`'s rules, matched on all four; no match → `-1` |
-| `sk_curso` | `curso_uuid`, current version only (`__END_AT IS NULL`) |
-| `sk_usuario` | `usuario_uuid` |
-| `valor_desconto` | measure |
-| `valor_pago` | measure |
+**Grain**: one row per sale of `silver.tb_venda`. `tb_venda` is append-only (append flows
+only), so each sale is read once by the stream.
 
-Sales are first joined to `silver.tb_acesso` on `acesso_uuid` to pick up the
-access location. All joins are inner joins.
+| Column | Type | Resolved by | Kind |
+|---|---|---|---|
+| `sk_tempo` | BIGINT | `dim_tempo.data` = the day of `data_venda`; no match → `-1` | dimension key |
+| `sk_codigos` | BIGINT | `dim_codigos` row matching the sale's four codes, computed with `dim_codigos`'s rules; no match → `-1` | dimension key |
+| `sk_curso` | BIGINT | `dim_curso` version of the sale's course in effect at `data_venda` (`__START_AT` ≤ `data_venda` < `__END_AT`, open end = infinite); if the sale is older than the course's first version, that first version; no match → `-1`. Never limited to `__END_AT IS NULL` | dimension key |
+| `sk_usuario` | BIGINT | `dim_usuario.usuario_uuid` = the sale's `usuario_uuid`; no match → `-1` | dimension key |
+| `valor_desconto` | DECIMAL(9,2) | `tb_venda.valor_desconto` | measure, additive, from silver |
+| `valor_pago` | DECIMAL(9,2) | `tb_venda.valor_pago` | measure, additive, from silver |
+
+The four sale codes:
+- **origin**: the sale's `origem`;
+- **access location**: `Não se aplica` for `ARQUIVO`, which is never looked up in the
+  accesses; for `API`, `tb_acesso.local_acesso` by `acesso_uuid`, or `Desconhecido` when there
+  is no access row;
+- **payment method**: `forma_pagamento`, `Desconhecido` when empty;
+- **discount**: `percentual_desconto`, `Não se aplica` when empty.
+
+**Reconciliation**: the row count equals `tb_venda`'s, with no exclusion. Every lookup is a
+`LEFT JOIN`, with the stream on the left and the key coalesced to `-1`. There is no inner
+join (constitution v3.0.0, Principle V).
+
+**Keys resolved once**: a sale's keys are set when it is processed, after the same update's
+dimensions have loaded. A dimension row that arrives in a later update does not change sales
+already written; they keep `-1` until a full refresh approved by the owner.
+
+**Query joins**: every key exists in its dimension, so inner joins from the fact to any
+dimension return every row.
+
+On 2026-11-05 (update `17a73045`): 420,472 rows, and the sums of `valor_pago` (538,722,841.07)
+and `valor_desconto` (33,549,457.70) equal silver's.
+- `sk_usuario = -1` for 4,362 sales, whose user silver rejected.
+- No other `-1`.
+- Locations: 2,174 site sales on `Desconhecido`; all 200,000 file sales on `Não se aplica`.
+- 3 course versions used, one per course, all through the first-version fallback.
+- 22 code combinations used.
+- A star query with inner joins to the four dimensions returns all 420,472 rows.
+
+The demo's course update and delete leave existing sales where they are: sales already
+written are not reprocessed, and the fallback puts them on the first version anyway.
 
 ### obt_acesso
 

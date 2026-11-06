@@ -129,3 +129,118 @@ settings; queries on the workspace (profile `databricks-free`) on 2026-10-28 and
 
 - **Decision**: the flow has no `APPLY AS DELETE WHEN`, recorded as a deviation in the plan.
 - **Rationale**: silver delivers no delete event. A user removed from silver keeps a row.
+
+## Revision 2026-11-05: inferred users (spec FR-013)
+
+Sources:
+- constitution v3.1.0 (Principle V: a fact may inner-join a dimension that guarantees
+  coverage, proven by an anti join returning 0 rows);
+- spec Clarifications, 2026-11-05;
+- Databricks CDC page (a target may have exactly one `AUTO CDC FROM SNAPSHOT` flow and one or
+  more `AUTO CDC` flows, SCD type 1, same keys);
+- the workspace on 2026-11-05.
+
+Facts:
+- 4,362 sales reference 4,362 distinct `usuario_uuid` that `tb_usuario` lacks (one sale each,
+  all `origem = 'API'`);
+- 0 sales have an empty `usuario_uuid`;
+- `tb_venda` is append-only (feature 013, T001).
+
+## Decision 10: A third `AUTO CDC` flow, fed by sales whose user silver lacks
+
+- **Decision**:
+  - **View** `vw_gold_dim_usuario_tb_venda`, a temporary view over
+    `STREAM(workspace.silver.tb_venda) AS v LEFT JOIN workspace.silver.tb_usuario AS u ON u.usuario_uuid = v.usuario_uuid`,
+    keeping `WHERE u.usuario_uuid IS NULL AND v.usuario_uuid IS NOT NULL`.
+  - **Columns**, in the users flow's shape:
+    - `sk_usuario = xxhash64(v.usuario_uuid) & 9223372036854775807`;
+    - `usuario_uuid`;
+    - `Desconhecido` for `nome_usuario`, `email_usuario`, `sexo_usuario`, `estado_usuario`,
+      `profissao_usuario`, `empresa_usuario`;
+    - `CAST(NULL AS INT) AS idade_usuario`;
+    - `v.origem AS origem`;
+    - `current_timestamp() AS data_carga`;
+    - `TIMESTAMP'1900-01-02' AS data_carga_silver` (Decision 11).
+  - **Flow** `gold_dim_usuario_tb_venda_flow AS AUTO CDC INTO workspace.gold.dim_usuario`,
+    with `KEYS (usuario_uuid)`, `SEQUENCE BY data_carga_silver`,
+    `COLUMNS * EXCEPT (data_carga_silver)` and `STORED AS SCD TYPE 1`. These are the
+    users flow's clauses.
+- **Rationale**:
+  - **Kimball's inferred member**: every user a sale references gets a row with a real key,
+    so the fact's lookup always succeeds (FR-013; constitution v3.1.0).
+  - **Allowed combination**: the documented pattern allows one snapshot flow plus several
+    `AUTO CDC` flows on an SCD type 1 target with the same keys. That is the members
+    snapshot, the users flow and this flow.
+  - **Stream-static**: `tb_venda` is read as a stream; `tb_usuario` is read without
+    `STREAM` and joined `LEFT ... WHERE IS NULL` (the anti-join form most widely supported
+    for stream-static joins).
+  - **Ordering**: the view reads `tb_usuario` as a batch, so the pipeline loads
+    `tb_usuario` first in each update. A user that silver accepts in the same update as its
+    sale is found, and no inferred row is written.
+  - **Key**: the key expression is identical to the users view (Principle VI, "one
+    expression per key"). An inferred user and its later real row share the key.
+  - **Attributes**: owner's answer (spec, Clarifications); `origem` comes from the sale.
+  - **Only sales**: users referenced only by accesses get none (owner).
+- **Alternatives considered**:
+  - Inferred rows inside the users view: a stream cannot be unioned with another
+    (Principle V), and silver users and sales are different streams.
+  - A materialized view of missing users: an `AUTO CDC` source must be a stream (feature
+    012, `must be a streaming query`).
+
+## Decision 11: The inferred rows' sequence is fixed at 1900-01-02
+
+- **Decision**: `data_carga_silver = TIMESTAMP'1900-01-02'` for every inferred row.
+- **Rationale**:
+  - **Real rows win**: a real row is sequenced by silver's load time (2026), so if silver
+    later delivers the user, the real row is newer and replaces the inferred one in place,
+    with the same key (FR-013).
+  - **Safe from the members snapshot**: the snapshot treats absent keys as deleted at its
+    version `1900-01-01`. The inferred rows are one day newer, so a full refresh that reruns
+    the snapshot does not delete them.
+  - **Repeats**: several sales of the same inferred user carry identical values and the same
+    sequence. The row stays one row; only `data_carga` may move.
+- **Alternatives considered**:
+  - The sale's `data_venda` as the sequence: it ties less often, but it ties the dimension
+    to sale dates, and a future sale could be dated after the user's silver load time.
+  - `1900-01-01`: equal to the snapshot version, so a full refresh could delete the
+    inferred rows.
+
+## Decision 12: Renumber the gold files to keep each flow view before its target
+
+- **Decision**: insert `02_vw_gold_dim_usuario_tb_venda.sql` and shift the later files by
+  one:
+
+  | Before | After |
+  |---|---|
+  | `02_dim_usuario.sql` | `03_dim_usuario.sql` |
+  | `03_dim_codigos.sql` | `04_dim_codigos.sql` |
+  | `04_vw_gold_dim_curso_dados_database.sql` | `05_vw_gold_dim_curso_dados_database.sql` |
+  | `05_vw_gold_dim_curso_membros.sql` | `06_vw_gold_dim_curso_membros.sql` |
+  | `06_dim_curso.sql` | `07_dim_curso.sql` |
+  | `07_fato_venda.sql` | `08_fato_venda.sql` |
+
+  File contents do not change. Every documentation link to these files is updated.
+- **Rationale**:
+  - Principle V puts each flow view in its own file, numbered just before its target's
+    file, with prefixes sequential from `01`.
+  - Datasets are identified by name, not by file, so renaming changes no table and no
+    streaming state.
+  - `import-dir --overwrite` does not delete files, so the six old names are deleted from the
+    workspace before the upload. Otherwise each dataset would be defined twice.
+- **Alternatives considered**:
+  - Numbering the new view `08_`: this breaks "numbered just before the target".
+  - Two files sharing `02_`: this breaks "sequential".
+
+## Decision 13: No full refresh; a real update is the test
+
+- **Decision**: add the view and flow, then run an ordinary dry run and update. The new flow
+  starts its own checkpoint and reads all of `tb_venda` once. The existing flows and keys
+  are untouched.
+- **Rationale**:
+  - Adding a flow to an existing target needs no refresh.
+  - This contract notes that a dry run once accepted what the update rejected, so the real
+    update is the proof.
+  - If the update rejects the combination (for example, a multi-flow limit), stop and ask the
+    owner. A full refresh is not a fix.
+- **Expected**: `dim_usuario` grows from 941,236 to 945,598 rows. Every earlier key and
+  `data_carga` is unchanged. The anti join of `tb_venda` against `dim_usuario` returns 0 rows.

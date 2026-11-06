@@ -1,6 +1,6 @@
 # Contract: The Gold User Dimension
 
-**Feature**: [../spec.md](../spec.md) | **Date**: 2026-10-28, revised 2026-11-04
+**Feature**: [../spec.md](../spec.md) | **Date**: 2026-10-28, revised 2026-11-04 and 2026-11-05
 
 `fato_venda` and `obt_acesso` will rely on `dim_usuario`'s keys and members.
 
@@ -9,7 +9,8 @@
 | File | Dataset | Reads |
 |---|---|---|
 | `src/pipeline/03_gold/01_vw_gold_dim_usuario_tb_usuario.sql` | `vw_gold_dim_usuario_tb_usuario` (temporary view) | `workspace.silver.tb_usuario`, streaming |
-| `src/pipeline/03_gold/02_dim_usuario.sql` | `workspace.gold.dim_usuario` (streaming table) | the view, plus two literal member rows |
+| `src/pipeline/03_gold/02_vw_gold_dim_usuario_tb_venda.sql` | `vw_gold_dim_usuario_tb_venda` (temporary view, 2026-11-05) | `workspace.silver.tb_venda`, streaming; `workspace.silver.tb_usuario`, static |
+| `src/pipeline/03_gold/03_dim_usuario.sql` (was `02_`) | `workspace.gold.dim_usuario` (streaming table) | both views, plus two literal member rows |
 
 The two files as built are the binding statements. If a change is rejected, stop and ask the
 owner. Validate a change to the view with a real update: a dry run accepted a `UNION` that
@@ -33,7 +34,10 @@ could be treated as deleted.
 ## What consumers may rely on
 
 - One row per `usuario_uuid`; `sk_usuario` and `usuario_uuid` unique and never null.
+- **Coverage (2026-11-05)**: every `usuario_uuid` referenced by `silver.tb_venda` has a row:
+  a silver user, or an inferred user (`Desconhecido` labels, positive key) that a later
+  silver row replaces under the same key. A fact may inner-join on `usuario_uuid`.
 - `sk_usuario` never changes for a given user, whatever is refreshed.
 - `sk_usuario = -1` is "unknown", `-2` is "not applicable"; both always exist. No other key
   is negative.
-- Attributes equal silver's latest row for the user.
+- Attributes equal silver's latest row for the user; inferred users carry placeholders.

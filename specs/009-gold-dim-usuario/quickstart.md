@@ -1,6 +1,6 @@
 # Quickstart: Validate the User Dimension
 
-**Feature**: [spec.md](spec.md) | **Date**: 2026-10-28, revised 2026-11-04
+**Feature**: [spec.md](spec.md) | **Date**: 2026-10-28, revised 2026-11-04 and 2026-11-05
 
 Shapes are in [data-model.md](data-model.md) and
 [contracts/gold-dim-usuario.md](contracts/gold-dim-usuario.md). Every CLI command takes
@@ -93,3 +93,64 @@ WHERE sk_usuario < 0 OR usuario_uuid IN (
 Run another update (no new data). Run the same query: every row is identical, `data_carga`
 included (`AUTO CDC` rewrites nothing when no silver row arrives), and the row count is
 still 941,236.
+
+## 6. Inferred users (2026-11-05, FR-013)
+
+### Before the change
+
+Record the current dimension:
+
+```sql
+SELECT count(*) AS linhas,                                                     -- 941236
+       sum(hash(sk_usuario, usuario_uuid, nome_usuario, email_usuario, idade_usuario,
+                sexo_usuario, estado_usuario, profissao_usuario, empresa_usuario,
+                origem, data_carga)) AS checksum
+FROM workspace.gold.dim_usuario;
+
+SELECT count(DISTINCT v.usuario_uuid) AS faltantes                            -- 4362
+FROM workspace.silver.tb_venda v
+LEFT ANTI JOIN workspace.silver.tb_usuario u ON u.usuario_uuid = v.usuario_uuid;
+```
+
+### Switch-over
+
+1. Delete the six renamed files' old names from the workspace (`02_dim_usuario.sql`,
+   `03_dim_codigos.sql`, `04_vw_gold_dim_curso_dados_database.sql`,
+   `05_vw_gold_dim_curso_membros.sql`, `06_dim_curso.sql`, `07_fato_venda.sql`).
+2. Upload `src/pipeline`.
+3. Confirm that `03_gold` holds exactly the eight files `01_` to `08_`, each identical to the
+   repository.
+
+Then run a dry run and a **real** ordinary update, which is the proof (contract). Both must
+end `COMPLETED`, with no full refresh.
+
+### After the update
+
+```sql
+SELECT count(*) AS linhas,                                                     -- 945598
+       count(DISTINCT sk_usuario) AS chaves,                                   -- 945598
+       count_if(sk_usuario > 0 AND nome_usuario = 'Desconhecido') AS inferidos, -- 4362
+       count_if(sk_usuario < 0) AS membros                                     -- 2
+FROM workspace.gold.dim_usuario;
+
+-- coverage: every sale's user has a row (constitution v3.1.0)
+SELECT count(*) AS vendas_sem_usuario                                         -- 0
+FROM workspace.silver.tb_venda v
+LEFT ANTI JOIN workspace.gold.dim_usuario d ON d.usuario_uuid = v.usuario_uuid;
+
+-- inferred rows: labels, origem from the sale, same key expression
+SELECT count_if(origem <> 'API') AS origem_errada,                             -- 0
+       count_if(sk_usuario <> xxhash64(usuario_uuid) & 9223372036854775807) AS chave_errada, -- 0
+       count_if(idade_usuario IS NOT NULL OR email_usuario <> 'Desconhecido') AS rotulo_errado -- 0
+FROM workspace.gold.dim_usuario
+WHERE sk_usuario > 0 AND nome_usuario = 'Desconhecido';
+```
+
+The checksum of step "Before the change", restricted to rows that are neither inferred nor
+members, is unchanged: the silver users and their `data_carga` were not rewritten. A second
+ordinary update leaves the 945,598 rows and the full checksum unchanged.
+
+`fato_venda` (08) still uses its `LEFT JOIN`, so its counts are unchanged. Its
+`sk_usuario = -1` stays at 4,362: those sales were written before the inferred rows existed,
+and keys are resolved once (feature 013). Switching the fact to inner joins, and
+re-resolving those sales, is feature 013's revision.

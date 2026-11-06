@@ -28,16 +28,20 @@ Removed sections: none
 Dependent templates: not modified by this command; they read the constitution at runtime.
 
 Affected files: none become non-compliant. `src/pipeline/03_gold/07_fato_venda.sql` (feature
-013) uses left outer joins with `-1`, which stay allowed. Switching it to inner joins needs, per
-dimension, a coverage guarantee in the plan and a 0-row anti join:
-- `dim_codigos`, `dim_tempo` and `dim_curso`: 0 uncovered sales on 2026-11-05;
-- `dim_usuario`: 4,362 uncovered sales (users rejected by silver). This needs inferred members
-  (feature 009), or a left outer join for this dimension only.
+013) uses inner joins to the four dimensions since 2026-11-06 (update `69381807`), each with its
+coverage guarantee in the plan and a 0-row anti join, as v3.1.0 requires:
+- `dim_codigos`, `dim_tempo` and `dim_curso`: 0 uncovered sales;
+- `dim_usuario`: 0 uncovered sales since 2026-11-06, when silver stopped dropping users whose
+  sex is not `M` or `F` (feature 006). It was 4,362 on 2026-11-05.
+
+The access lookup (`silver.tb_acesso`) stays a left outer join from the sales, because file
+sales have no access by nature.
 
 Follow-up TODOs:
-- Feature 013: decide the join form per dimension. If any changes to an inner join, revise the
-  spec, plan and tasks, and record the coverage proof.
-- Feature 009: inferred members in `dim_usuario`, if `sk_usuario` is to be inner-joined.
+- Feature 013: done on 2026-11-06. All four dimension lookups are inner joins; the spec, plan
+  and tasks record the coverage proof.
+- Feature 009: not needed. Inferred members were tried and undone; `dim_usuario` covers every
+  sale since silver keeps every user (feature 006, 2026-11-06).
 - Earlier suggestion, still open: reword Principle I's course exceptions.
 - Commit this amendment (remove this report first).
 - No deferred placeholders.

@@ -132,7 +132,7 @@ The graph as rendered by the pipeline UI:
 | Default members (`-1` unknown, `-2` not applicable) through `AUTO CDC ONCE ... FROM SNAPSHOT` | [02_dim_usuario.sql](../src/pipeline/03_gold/02_dim_usuario.sql) |
 | Default members through a once-only `AUTO CDC ONCE` flow from a view (SCD type 2, where a snapshot flow is not allowed) | [05_vw_gold_dim_curso_membros.sql](../src/pipeline/03_gold/05_vw_gold_dim_curso_membros.sql), [06_dim_curso.sql](../src/pipeline/03_gold/06_dim_curso.sql) |
 | Materialized views | [03_dim_codigos.sql](../src/pipeline/03_gold/03_dim_codigos.sql), [05_obt_acesso.sql](../code_tips/03_gold/05_obt_acesso.sql) |
-| Fact as a streaming table with stream-static lookups (`LEFT JOIN`, `-1` fallback; SCD 2 version in effect at the event) | [07_fato_venda.sql](../src/pipeline/03_gold/07_fato_venda.sql) |
+| Fact as a streaming table with stream-static lookups (inner joins to the dimensions with proven coverage, `LEFT JOIN` to the accesses; SCD 2 version in effect at the event) | [07_fato_venda.sql](../src/pipeline/03_gold/07_fato_venda.sql) |
 
 ### Legacy and current syntax
 

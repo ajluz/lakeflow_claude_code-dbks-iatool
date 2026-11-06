@@ -1,6 +1,6 @@
 # Research: Gold Sales Fact
 
-**Feature**: [spec.md](spec.md) | **Date**: 2026-11-05, revised the same day (constitution v3.0.0: facts are streaming tables)
+**Feature**: [spec.md](spec.md) | **Date**: 2026-11-05, revised the same day (constitution v3.0.0: facts are streaming tables) and on 2026-11-06 (inner joins to the dimensions; Decisions 2, 4, 5, 9 and 10)
 
 Sources:
 - constitution v2.0.0;
@@ -39,30 +39,34 @@ No item of the Technical Context was left as NEEDS CLARIFICATION.
   - Storing natural keys and joining at query time, as in the Databricks page's example:
     the spec and Principle VII require surrogate keys.
 
-## Decision 2: Every lookup is a `LEFT JOIN` with a member fallback
+## Decision 2: Inner joins to the four dimensions, each with proven coverage (revised 2026-11-06)
 
-- **Decision**: one `LEFT JOIN` per lookup, with the stream on the left, followed by
-  `coalesce(<key>, -1)` for each of the four keys. There are no inner joins (constitution
-  v3.0.0, Principle V).
-- **Load joins and query joins**:
-  - These `LEFT JOIN`s are load-time lookups that give every sale a valid key.
-  - Queries from the fact to the dimensions then use plain inner joins, which never drop
-    a sale, because every key exists. This is how Kimball's "no lost facts, no null
-    foreign keys" rule is met in SQL.
+- **Decision**: one inner `JOIN` per dimension, with the stream on the left and the
+  dimension read without `STREAM`. No `coalesce`. Each dimension's coverage is guaranteed
+  as follows (constitution v3.1.0, Principle V):
+
+  | Dimension | Lookup key | Why every sale matches | Anti join on 2026-11-06 |
+  |---|---|---|---|
+  | `dim_tempo` | `data = CAST(data_venda AS DATE)` | the calendar covers 2021-01-01 to 2030-12-31; sales run from 2024-06-01 to 2025-12-23, and the demonstration generates no data for the past (owner) | 0 |
+  | `dim_codigos` | the four codes | it holds every combination of the codes, computed with its own rules (Decision 3, feature 011) | 0 |
+  | `dim_curso` | `curso_uuid` + the course rule | every sale's course has a version, and the rule always picks one (Decision 4) | 0 (and 0 `curso_uuid` absent) |
+  | `dim_usuario` | `usuario_uuid` | users and sales come from the same sources, and silver drops no user since 2026-11-06 (feature 006, Phase 9) | 0 |
+
 - **Rationale**:
-  - FR-003, FR-004 and FR-009; Principle I (facts reconcile with silver); Principle VII
-    (no null foreign keys).
-  - It fixes the known issue: the earlier inner joins dropped all 200,000 file sales and
-    the 6,536 sales whose access or user is missing.
-  - `-2` is not needed: no key is "not applicable" by nature (spec, FR-004).
+  - The owner asked for Kimball's surrogate key pipeline, where every lookup succeeds
+    (spec, Clarifications 2026-11-06).
+  - Principle V allows it once coverage is proven by query; the four anti joins return 0.
+  - After every load, the fact's row count must equal silver's. A sale that ever misses a
+    dimension is a violation to fix in that dimension (quickstart, step 2).
 - **Duplicates**: each lookup must match at most one row, or a sale would be multiplied.
-  - `dim_tempo`: one row per date.
-  - `dim_usuario`: one row per `usuario_uuid`.
-  - `dim_codigos`: one row per combination of the four codes.
-  - `tb_acesso`: `acesso_uuid` is unique; feature 011 checked that 420,472 sales stay
-    420,472 after this join.
-  - `dim_curso`: see Decision 4.
-- **Alternatives considered**: inner joins (the defect being fixed).
+  `dim_tempo` has one row per date, `dim_usuario` one per `usuario_uuid`, `dim_codigos` one
+  per combination, and the course rule picks exactly one version (Decision 4). The access
+  lookup matches at most one access (`acesso_uuid` is unique).
+- **Alternatives considered**:
+  - Left joins with `-1` on all four (the first build): replaced at the owner's request.
+  - Inner join to `tb_acesso`: removes all 200,000 file sales and 2,174 site sales; the
+    owner kept the left join (Decision 3).
+  - Keeping `dim_curso` on a left join: unnecessary once the course rule is total.
 
 ## Decision 3: The sale codes, computed exactly as `dim_codigos` builds them
 
@@ -86,54 +90,61 @@ No item of the Technical Context was left as NEEDS CLARIFICATION.
 - **Alternatives considered**:
   - Computing `xxhash64` of the four codes instead of joining. It gives the same key and
     no join, but it duplicates the key expression in a second file. It would also hide a
-    missing combination, which the join turns into `-1`.
+    missing combination, which the inner join exposes as a row-count difference.
 
 ## Decision 4: The course version in effect, else the first version
 
-- **Decision**: a CTE `versoes_curso` over `workspace.gold.dim_curso`, keeping rows where
-  `sk_curso > 0` (no members). It adds
-  `min(__START_AT) OVER (PARTITION BY curso_uuid) AS primeiro_inicio`.
+- **Decision** (revised 2026-11-06): a CTE `versoes_curso` over `workspace.gold.dim_curso`,
+  keeping rows where `sk_curso > 0` (no members). It adds
+  `lead(__START_AT) OVER (PARTITION BY curso_uuid ORDER BY __START_AT) AS proximo_inicio`
+  and `min(__START_AT) OVER (PARTITION BY curso_uuid) AS primeiro_inicio`. A version is
+  valid from its `__START_AT` until the next version's `__START_AT`, so the version in effect
+  is the latest one that started on or before the sale.
 
   The fact joins it with:
 
   ```sql
-  LEFT JOIN versoes_curso AS c
+  JOIN versoes_curso AS c
     ON c.curso_uuid = s.curso_uuid
    AND (
-         (s.data_venda >= c.__START_AT AND (c.__END_AT IS NULL OR s.data_venda < c.__END_AT))
+         (c.__START_AT <= s.data_venda AND (c.proximo_inicio IS NULL OR s.data_venda < c.proximo_inicio))
       OR (s.data_venda < c.primeiro_inicio AND c.__START_AT = c.primeiro_inicio)
        )
   ```
 
-  `sk_curso` = `coalesce(c.sk_curso, -1)`.
+  `sk_curso` = `c.sk_curso`.
 - **Rationale**:
   - FR-005 and the owner's two answers (spec, Clarifications).
-  - The first branch is the skill's as-of-transaction join, with
-    `[__START_AT, __END_AT)` (start inclusive, end exclusive).
+  - The first branch is the skill's as-of-transaction join, with the window
+    `[__START_AT, next __START_AT)` (start inclusive, end exclusive).
   - The second branch catches sales older than the course's first version. On 2026-11-05
     that is every sale.
   - The two branches cannot both match one sale:
     - the first needs `data_venda >= __START_AT`;
     - the second needs `data_venda <` the first `__START_AT`;
-    - versions of one course do not overlap.
+    - the windows `[__START_AT, next __START_AT)` of one course do not overlap and leave
+      no gap from the first start onward.
 
-    So each sale gets at most one version.
-  - Cases that resolve to `-1`, as FR-005 states:
-    - a sale in a gap after a deletion, before a re-insertion;
-    - a sale after the course's last version closed.
-
-    Neither exists today.
+    So each sale gets exactly one version.
+  - The next version's start replaces `__END_AT` as the upper bound. When versions are
+    contiguous they are the same. After a deletion (`__END_AT` set, no next version), a
+    later sale takes the closed version; in a gap before a re-insertion, the version
+    before the gap. Tested on 2026-11-06 with synthetic versions (before the first, in v1,
+    in v2, after a delete, in v3 after a re-insert): exactly one match each.
+  - So no sale resolves to `-1`, and the inner join is safe (Decision 2).
   - There is no `__END_AT IS NULL` filter (owner: not current-only).
 - **Alternatives considered**:
   - Current version only (rejected by the owner).
   - Strict as-of (every sale is `-1` today).
+  - The `[__START_AT, __END_AT)` window of the first build: it leaves a sale after a
+    deletion without a version, which an inner join would drop.
 
 ## Decision 5: Date and user lookups
 
-- **Decision**:
-  - `LEFT JOIN workspace.gold.dim_tempo AS t ON t.data = CAST(s.data_venda AS DATE)`.
-  - `LEFT JOIN workspace.gold.dim_usuario AS u ON u.usuario_uuid = s.usuario_uuid`.
-  - Each key is `coalesce(..., -1)`.
+- **Decision** (revised 2026-11-06):
+  - `JOIN workspace.gold.dim_tempo AS t ON t.data = CAST(s.data_venda AS DATE)`.
+  - `JOIN workspace.gold.dim_usuario AS u ON u.usuario_uuid = s.usuario_uuid`.
+  - No `coalesce`; coverage per Decision 2.
 - **Rationale**:
   - FR-006 and FR-007.
   - The members of `dim_tempo` have an empty `data`, and those of `dim_usuario` have
@@ -143,7 +154,8 @@ No item of the Technical Context was left as NEEDS CLARIFICATION.
 - **Expected**:
   - `sk_tempo = -1` for 0 sales: every sale falls between 2024-06-01 and 2025-12-23, inside
     2021–2030.
-  - `sk_usuario = -1` for 4,362 sales.
+  - `sk_usuario = -1` for 0 sales since 2026-11-06 (it was 4,362 while silver dropped
+    users); with the inner join no key is `-1`.
 
 ## Decision 6: Columns, order and types
 
@@ -151,8 +163,7 @@ No item of the Technical Context was left as NEEDS CLARIFICATION.
   `valor_desconto`, `valor_pago`, in that order, and nothing else.
 - **Rationale**:
   - FR-002 and FR-010.
-  - The four keys are BIGINT in their dimensions, and `coalesce` with the literal `-1`
-    keeps them BIGINT.
+  - The four keys are BIGINT in their dimensions and are taken from them unchanged.
   - The measures keep silver's `DECIMAL(9,2)`.
 - **Alternatives considered**: adding `venda_uuid` or `data_carga` (not requested; spec
   Assumptions).
@@ -181,12 +192,26 @@ No item of the Technical Context was left as NEEDS CLARIFICATION.
   - Constitution v3.0.0 requires each fact's plan to state this.
   - The owner accepted it (spec, Clarifications): within an update the dimensions finish
     first, so a sale sees every dimension row of that update.
-  - A dimension row that arrives in a later update than its sale leaves the sale at `-1`.
-    Only a full refresh approved by the owner resolves it again.
+  - With the inner joins (2026-11-06), a dimension row that arrives in a later update than
+    its sale would drop the sale, and the row-count check would report it. Only a full
+    refresh approved by the owner would then bring the sale back.
   - Consequences today:
-    - the 4,362 sales whose user silver rejects stay `-1`, which is correct anyway;
+    - a dimension row arriving in a later update than its sale would now drop the sale
+      under the inner join, which the row-count check reports; within one update the
+      dimensions load first, so it does not happen (owner, 2026-11-05);
     - the demo's course update and delete do not touch existing sales, which matches
       FR-005 (past sales stay on the version that applied to them).
 - **Alternatives considered**:
   - A materialized view that recomputes every sale: not allowed for facts.
   - A scheduled full refresh: destroys streaming state and needs approval every time.
+
+## Decision 10: Apply the change with an ordinary update (2026-11-06)
+
+- **Decision**: no full refresh of `fato_venda`. The changed query applies to sales
+  processed from now on; the 420,472 stored rows stay.
+- **Rationale**: run as a batch over all sales on 2026-11-06, the new query gives 420,472
+  rows and `sum(hash(sk_tempo, sk_codigos, sk_curso, sk_usuario, valor_desconto, valor_pago))`
+  = 581165462078, exactly the stored fact's. No stored sale uses `-1`, and every sale's
+  course resolves to the same version under the new rule.
+- **Alternatives considered**: a full refresh of `fato_venda`: same result, but it costs a
+  reprocess and the owner's approval for nothing.

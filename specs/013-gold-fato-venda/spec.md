@@ -16,6 +16,11 @@
 - Q: Should the course join keep only the current version (`__END_AT IS NULL`)? → A: No. The fact uses the version in effect at the sale's time, with the first-version fallback (owner). A current-only join would move past sales to a later version after an update, and would send a deleted course's sales to unknown.
 - Q: The fact is processed incrementally (constitution v3.0.0), so a sale's keys are set once, when the sale is first processed. What happens to a sale whose dimension row did not exist yet? → A: It is not an issue: the fact is loaded only after all dimensions have finished loading in the same pipeline update, so a sale sees every dimension row of that update (owner). The only remaining case, a dimension row that arrives in a later update than its sale, keeps `-1`, and only a full refresh approved by the owner resolves it again.
 
+### Session 2026-11-06
+
+- Q: How should the fact treat sales that have no access row (200,000 file sales and 2,174 site sales whose access silver dropped)? → A: Keep them (owner). The sales drive the query, so only accesses that ended in a purchase are read (218,298 of 2,516,192 on 2026-11-06); an access without a sale never enters the fact. The access lookup stays a left join from the sales: a site sale whose access silver dropped gets the location `Desconhecido`, and a file sale is never looked up (`Não se aplica`).
+- Q: Which of the fact's four dimension lookups should become inner joins? → A: All four (owner, following Kimball). The course rule gains a last fallback so that every sale finds a version: a sale with no version in effect that is not older than the first version gets the course's most recent version that started before it (for example the closed version of a deleted course). The owner noted that this is a demonstration and no new data will be generated for the past. Coverage measured on 2026-11-06: 0 sales without a match in each of the four dimensions. The `tb_acesso` lookup stays a left join (previous answer).
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Every sale in the fact, with its measures (Priority: P1)
@@ -48,9 +53,10 @@ As an analyst, I want every dimension key of every row to be filled and to exist
 dimension, so that a join to any dimension never drops a sale.
 
 **Why this priority**: the constitution requires facts to reconcile with silver, with no
-null keys, and with unmatched lookups resolved to an explicit member (Principles I and VII).
-The earlier pipeline joined with inner joins and silently lost every file sale, which have no
-access.
+null keys (Principles I and VII). The four dimension lookups are inner joins (owner,
+2026-11-06), which the constitution allows only because each dimension covers every key a
+sale can carry (Principle V). The earlier pipeline's inner join to the accesses silently
+lost every file sale, so that lookup stays a left join.
 
 **Independent Test**: for each of the four keys:
 - no row has an empty key;
@@ -63,12 +69,14 @@ access.
    `sk_tempo` is that day's key.
 2. **Given** a sale whose user is in `dim_usuario`, **When** its row is read, **Then**
    `sk_usuario` is that user's key.
-3. **Given** a sale whose user is not in `dim_usuario` (4,362 on 2026-11-05, rejected by
-   silver's user rules), **When** its row is read, **Then** `sk_usuario` is `-1` (unknown).
+3. **Given** the sales of `silver.tb_venda`, **When** each is looked up in the four
+   dimensions, **Then** every sale matches a row in each (0 without a match on
+   2026-11-06), so the inner joins keep every sale.
 4. **Given** a sale, **When** its course is looked up, **Then** `sk_curso` is the key of
-   the course version that applies to the sale (FR-005).
-5. **Given** any lookup with no match, **When** the row is read, **Then** the key is `-1`,
-   and the row is still in the fact.
+   the course version that applies to the sale (FR-005), and some version always applies.
+5. **Given** a sale that would match no row of a dimension, **When** the fact loads,
+   **Then** the row-count check after the load shows the loss, and it is treated as a
+   violation to fix in the dimension (constitution, Principle V).
 
 ---
 
@@ -104,19 +112,23 @@ code row or are dropped.
 
 ### Edge Cases
 
-- **A sale date outside the calendar** (before 2021 or after 2030): `sk_tempo` = `-1`.
-  None exists on 2026-11-05.
+- **A sale date outside the calendar** (before 2021 or after 2030): the inner join would
+  drop it. None exists (sales run from 2024-06-01 to 2025-12-23), and the demonstration
+  generates no new data for the past; the row-count check would show it, and the calendar
+  would be extended.
 - **A dimension row that arrives after its sale.** Within one pipeline update the
-  dimensions finish loading before the fact, so a sale sees them. A dimension row that only
-  arrives in a later update does not change sales already written. They keep `-1` until a
-  full refresh approved by the owner. The 4,362 sales whose user silver rejects keep `-1`
-  in any case.
-- **A sale with no access row** (site sales whose event was dropped by silver): location
-  `Desconhecido` in the codes, kept in the fact.
+  dimensions finish loading before the fact, so a sale sees them. Every sale's user is in
+  `dim_usuario` since 2026-11-06, because silver no longer drops users.
+- **A sale with no access row** (2,174 site sales on 2026-11-06, whose event silver dropped
+  for the address): location `Desconhecido` in the codes, kept in the fact.
+- **An access that did not end in a purchase**: never read. The lookup starts from the sales,
+  so only the accesses of sales are used.
 - **A file sale**: it has no access by nature. Its location is `Não se aplica` and it is
   never looked up in the accesses.
 - **A course deleted at the live demo**: its sales keep their course key. The deletion only
-  closes the last version, and every sale predates the deletion (FR-005).
+  closes the last version, and every sale predates the deletion (FR-005). A sale dated
+  after the deletion would get that closed version, the most recent one that started
+  before it, so the inner join keeps it.
 - **A course updated at the live demo**: its past sales stay on the first version, the
   `247.00` price. Only sales after the update would get the new version (FR-005).
 - **Every sale predates the course versions.** Sales run from 2024-06-01 to 2025-12-23.
@@ -143,16 +155,28 @@ code row or are dropped.
 
 - **FR-003**: Grain: one row per sale of `silver.tb_venda`. The row count MUST equal
   silver's, and no sale may be excluded.
-- **FR-004**: Every dimension key MUST be filled and MUST exist in its dimension. A lookup
-  with no match MUST resolve to `-1` (unknown). A dimension that does not apply to a sale
-  by nature MUST resolve to `-2` (not applicable); no such case exists among the four keys
-  today.
+- **FR-004**: Every dimension key MUST be filled and MUST exist in its dimension. The four
+  dimension lookups MUST be inner joins (owner, 2026-11-06), each with its coverage
+  guaranteed and verified by an anti join of `silver.tb_venda` against the dimension that
+  returns 0 rows (constitution, Principle V):
+  - `dim_tempo`: the calendar covers 2021–2030, and every sale falls between 2024-06-01
+    and 2025-12-23;
+  - `dim_codigos`: it holds every combination of the four codes computed with its own rules
+    (FR-008);
+  - `dim_curso`: every sale's course has at least one version, and FR-005 always picks one;
+  - `dim_usuario`: users come from the same sources as sales, and silver drops no user since
+    2026-11-06.
+
+  No key uses `-1` or `-2`; the members stay in the dimensions for other facts.
 - **FR-005**: `sk_curso` MUST be the key of the version of the sale's course (by
   `curso_uuid`, excluding members) in effect at the sale's time: the version whose
   `__START_AT` ≤ `data_venda` < `__END_AT`, an open `__END_AT` counting as infinite. When the
   sale is older than the course's first version, it MUST get that first version (the
-  earliest `__START_AT`). When the course has no version at all, `-1`. A course that was
-  updated or deleted later keeps its sales on the version that applied to them. The lookup
+  earliest `__START_AT`). Otherwise (a sale dated after a deletion, or in a gap between
+  versions), it MUST get the most recent version whose `__START_AT` ≤ `data_venda`. A
+  course with no version at all is not possible, because the coverage check of FR-004
+  requires every sale's course in `dim_curso`. A course that was updated or deleted later
+  keeps its sales on the version that applied to them. The lookup
   MUST NOT be restricted to the current version (`__END_AT IS NULL`).
 - **FR-006**: `sk_tempo` MUST be the key of the `dim_tempo` row whose date is the sale's
   date (the day of `data_venda`).
@@ -165,8 +189,10 @@ code row or are dropped.
     of the sale's access in `silver.tb_acesso`, or `Desconhecido` when there is none;
   - payment method: the sale's `forma_pagamento`, `Desconhecido` when empty;
   - discount: the sale's `percentual_desconto`, `Não se aplica` when empty.
-- **FR-009**: Looking up the access location MUST NOT remove sales: a sale with no access,
-  and every file sale, stays in the fact.
+- **FR-009**: The access location MUST be looked up from the sales, so that only accesses
+  that ended in a purchase are read. It is a left join from the sales to `silver.tb_acesso`
+  for site sales only, and it MUST NOT remove sales: a site sale with no access row (2,174
+  on 2026-11-06) and every file sale stay in the fact (owner, 2026-11-06).
 - **FR-010**: The fact MUST hold only surrogate keys and the two measures. No descriptive
   attribute, and no silver key, is stored.
 - **FR-011**: The fact MUST NOT declare expectations: this spec requests none
@@ -195,12 +221,12 @@ code row or are dropped.
   Joining the fact to all four dimensions returns 100% of its rows.
 - **SC-004**: 100% of the 200,000 file sales have a code row with
   `local_acesso = 'Não se aplica'`. 0 site sales do.
-- **SC-005**: `sk_usuario = -1` for exactly the sales whose user is not in `dim_usuario`
-  (4,362 on 2026-11-05). `sk_codigos` uses `Desconhecido` as the location for exactly the
-  site sales with no access (2,174).
-- **SC-006**: `sk_tempo = -1` for 0 sales on 2026-11-05. `sk_curso = -1` for 0 sales,
-  because every sale's course has a version. On 2026-11-05 every sale points to its course's
-  only version, through the first-version fallback.
+- **SC-005**: 0 rows have a key below 0 in any of the four keys. `sk_codigos` uses
+  `Desconhecido` as the location for exactly the site sales with no access (2,174 on
+  2026-11-06).
+- **SC-006**: Before the inner joins are accepted, the anti join of `silver.tb_venda`
+  against each of the four dimensions returns 0 rows. On 2026-11-06 every sale points to
+  its course's only version, through the first-version fallback.
 
 ## Assumptions
 
@@ -215,9 +241,12 @@ code row or are dropped.
 - **"The Não se aplica rule when the origem is ARQUIVO"** means the access location used to
   find the sale's code row. It is `dim_codigos`'s own rule, applied to the sale, as the
   earlier pipeline did.
-- **No inner joins that drop sales.** The earlier pipeline's joins removed every file sale,
-  because its access join required an access. The constitution forbids this (Principle I),
-  so every lookup keeps the sale and falls back to a member.
+- **Inner joins only where coverage is guaranteed.** The four dimension lookups are inner
+  joins (owner, 2026-11-06; constitution v3.1.0, Principle V). The access lookup stays a
+  left join: the earlier pipeline's inner join to the accesses removed every file sale.
+- **This is a demonstration.** No new data will be generated for the past (owner,
+  2026-11-06), so no sale can fall outside the calendar, and the coverage measured on
+  2026-11-06 holds for the existing sales.
 - **Exactly the six requested columns.** No degenerate key (such as `venda_uuid`) and no
   `data_carga` are added. The request lists none, and the other features followed the
   requested lists.

@@ -62,15 +62,15 @@ recognised by `sk_usuario > 0 AND nome_usuario = 'Desconhecido'`.
 
 ## How facts will use it
 
-`fato_venda` resolves `sk_usuario` by joining on `usuario_uuid`. 4,362 sales reference users
-that silver rejected and the dimension does not hold, so the fact uses a left join and `-1`
-for them (constitution v3.1.0: no coverage guarantee, no inner join). `-2` remains for facts with
-no user by nature. The join stays
+`fato_venda` resolves `sk_usuario` by joining on `usuario_uuid`. Since 2026-11-06 every sale's
+user has a row (silver drops no user, feature 006), so the fact uses an inner join with its
+coverage proven (constitution v3.1.0; feature 013). `-1` and `-2` remain for facts that cannot
+guarantee a user. The join stays
 the documented method (Principle VII), even though the key could be computed directly.
 
 ## Expected rows
 
 ```text
-941,234 silver users + 2 members = 941,236   (2026-11-06, after the inferred users were undone)
-API 741,234 · ARQUIVO 200,000 · members 2
+956,249 silver users + 2 members = 956,251   (2026-11-06, after silver kept every user)
+API 756,249 · ARQUIVO 200,000 · members 2
 ```

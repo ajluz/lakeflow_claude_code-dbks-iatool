@@ -264,13 +264,11 @@ No rule drops a row. On 2026-10-28 every rule passed all 420,472 rows.
 **Reconciliation**: API sales = valid API events with a payment (220,472 on 2026-10-28);
 files sales = rows in `bronze.dados_files` (200,000). No exclusion.
 
-**Keys that do not join**, by design, counted on 2026-10-28:
-- 2,174 API sales have an `acesso_uuid` with no row in `tb_acesso`: their event had the
-  address `999.999.999.999`;
-- 4,362 sales have a `usuario_uuid` with no row in `tb_usuario`: their user's sex is not
-  `M` or `F`.
-
-Gold resolves them to an "unknown" member.
+**Keys that do not join**, by design: 2,174 API sales have an `acesso_uuid` with no row in
+`tb_acesso`, because their event had the address `999.999.999.999` (counted on 2026-10-28).
+Gold gives them the access location `Desconhecido`. Since 2026-11-06 every sale's
+`usuario_uuid` has a row in `tb_usuario`: silver keeps users whose sex is not `M` or `F`,
+with an empty sex (feature 006). Until then, 4,362 sales had no user row.
 
 **Installments**: the payload rounds the installment value to cents, so `valor_pago`
 differs by a cent or two from `payload.info_pagamento.valor` in 78,578 API sales, net
@@ -342,8 +340,8 @@ never change.
   name), `fl_dia_semana` (true Monday–Friday), `dia_mes`, `fl_ultimo_dia_mes`, `dia_ano`,
   `semana_ano` (ISO week), `bimestre`, `trimestre`, `semestre`, `data_carga` (insert
   time).
-- **Use by facts**: resolve `sk_tempo` by joining the event date on `data`; a date with no
-  match resolves to `-1`.
+- **Use by facts**: resolve `sk_tempo` with an inner join of the event date on `data`; the
+  calendar covers every sale date (`fato_venda`, 2026-11-06).
 - If the table holds a repeated day, the script stops before inserting anything; it never
   drops the table or deletes rows.
 
@@ -375,15 +373,17 @@ selects them.
 (not applicable). A second flow, `gold_dim_usuario_membros_flow`, loads them once with `AUTO
 CDC ONCE ... FROM SNAPSHOT`. A snapshot treats absent keys as deleted at its version, so its
 `WITH VERSION` is fixed at 1900, older than every silver row: **do not remove it**. Facts
-resolve `sk_usuario` by joining on `usuario_uuid`; they use `-1` when there is no match (4,362
-sales users on 2026-11-04, whose sex failed silver's rule) and `-2` when the fact has no user
-by nature.
+resolve `sk_usuario` by joining on `usuario_uuid`. Since 2026-11-06 every sale's user has a
+row, so `fato_venda` uses an inner join; until then 4,362 sales users were missing, because
+silver dropped users whose sex failed its rule. The members `-1` and `-2` remain for facts
+that cannot guarantee a user.
 
 **Expectations**: none, because the feature's spec requests none (constitution v2.0.0,
 Principle III). A null key does not stop an update, so keys are verified by query.
 
-On 2026-11-04: 941,236 rows (`API` 741,234, `ARQUIVO` 200,000, 2 members), every key unique
-and present, and every attribute equal to silver's. A full refresh of this table left every
+On 2026-11-06 (after update `dd4ab1a3`): 956,251 rows (`API` 756,249, `ARQUIVO` 200,000,
+2 members), every key unique and present; 15,015 users have an empty sex. On 2026-11-04 the
+table had 941,236 rows and every attribute equal to silver's. A full refresh of this table left every
 key unchanged, and a later update with no new data left every key and `data_carga` unchanged.
 
 ### dim_curso
@@ -412,7 +412,9 @@ is SCD type 1 and keeps neither history nor the ordered change events that type 
 | `__END_AT` | TIMESTAMP | `timestamp_change` of the event that closed it; null while current |
 
 **Current version**: `WHERE __END_AT IS NULL`. A fact resolves the version in effect at its
-date: `curso_uuid` matches and the date is in `[__START_AT, __END_AT)`; no match → `-1`.
+date with an inner join: `curso_uuid` matches and the date falls between the version's
+`__START_AT` and the next version's `__START_AT` (so after a deletion, the closed version);
+a date before the first version takes the first version.
 
 **Version lifecycle.** An update closes the open version and opens a new one with its own key.
 A delete closes the open version and removes nothing. There is no `TRACK HISTORY`: every change
@@ -476,10 +478,10 @@ only), so each sale is read once by the stream.
 
 | Column | Type | Resolved by | Kind |
 |---|---|---|---|
-| `sk_tempo` | BIGINT | `dim_tempo.data` = the day of `data_venda`; no match → `-1` | dimension key |
-| `sk_codigos` | BIGINT | `dim_codigos` row matching the sale's four codes, computed with `dim_codigos`'s rules; no match → `-1` | dimension key |
-| `sk_curso` | BIGINT | `dim_curso` version of the sale's course in effect at `data_venda` (`__START_AT` ≤ `data_venda` < `__END_AT`, open end = infinite); if the sale is older than the course's first version, that first version; no match → `-1`. Never limited to `__END_AT IS NULL` | dimension key |
-| `sk_usuario` | BIGINT | `dim_usuario.usuario_uuid` = the sale's `usuario_uuid`; no match → `-1` | dimension key |
+| `sk_tempo` | BIGINT | `dim_tempo.data` = the day of `data_venda` | dimension key |
+| `sk_codigos` | BIGINT | `dim_codigos` row matching the sale's four codes, computed with `dim_codigos`'s rules | dimension key |
+| `sk_curso` | BIGINT | `dim_curso` version of the sale's course in effect at `data_venda`: `__START_AT` ≤ `data_venda` < the next version's `__START_AT` (open for the latest, so a sale after a deletion takes the closed version); if the sale is older than the course's first version, that first version. Never limited to `__END_AT IS NULL` | dimension key |
+| `sk_usuario` | BIGINT | `dim_usuario.usuario_uuid` = the sale's `usuario_uuid` | dimension key |
 | `valor_desconto` | DECIMAL(9,2) | `tb_venda.valor_desconto` | measure, additive, from silver |
 | `valor_pago` | DECIMAL(9,2) | `tb_venda.valor_pago` | measure, additive, from silver |
 
@@ -491,21 +493,31 @@ The four sale codes:
 - **payment method**: `forma_pagamento`, `Desconhecido` when empty;
 - **discount**: `percentual_desconto`, `Não se aplica` when empty.
 
-**Reconciliation**: the row count equals `tb_venda`'s, with no exclusion. Every lookup is a
-`LEFT JOIN`, with the stream on the left and the key coalesced to `-1`. There is no inner
-join (constitution v3.0.0, Principle V).
+**Reconciliation**: the row count equals `tb_venda`'s, with no exclusion. The four dimension
+lookups are inner joins, with the stream on the left. Each dimension covers every sale, and
+this was proven by an anti join of `tb_venda` returning 0 on 2026-11-06 (constitution
+v3.1.0, Principle V):
+- `dim_tempo`: the calendar covers 2021–2030; sales run from 2024-06-01 to 2025-12-23;
+- `dim_codigos`: it holds every combination of the four codes;
+- `dim_curso`: the course rule always picks a version;
+- `dim_usuario`: silver drops no user since 2026-11-06.
+
+The access lookup is a `LEFT JOIN` from the sales, so only accesses that ended in a purchase
+are read, and file sales and site sales without an access stay in the fact.
 
 **Keys resolved once**: a sale's keys are set when it is processed, after the same update's
-dimensions have loaded. A dimension row that arrives in a later update does not change sales
-already written; they keep `-1` until a full refresh approved by the owner.
+dimensions have loaded. A dimension row that arrived in a later update than its sale would
+make the inner join drop the sale; the row-count check after each load would show it.
 
 **Query joins**: every key exists in its dimension, so inner joins from the fact to any
 dimension return every row.
 
-On 2026-11-05 (update `17a73045`): 420,472 rows, and the sums of `valor_pago` (538,722,841.07)
-and `valor_desconto` (33,549,457.70) equal silver's.
-- `sk_usuario = -1` for 4,362 sales, whose user silver rejected.
-- No other `-1`.
+On 2026-11-06 (update `69381807`, the inner joins, an ordinary update): 420,472 rows, and the
+sums of `valor_pago` (538,722,841.07) and `valor_desconto` (33,549,457.70) equal silver's.
+- No key is below 0 in any of the four keys (it was `sk_usuario = -1` for 4,362 sales
+  until silver stopped dropping users on 2026-11-06).
+- Checksum `sum(hash(sk_tempo, sk_codigos, sk_curso, sk_usuario, valor_desconto, valor_pago))`
+  581165462078, unchanged by the switch to inner joins.
 - Locations: 2,174 site sales on `Desconhecido`; all 200,000 file sales on `Não se aplica`.
 - 3 course versions used, one per course, all through the first-version fallback.
 - 22 code combinations used.

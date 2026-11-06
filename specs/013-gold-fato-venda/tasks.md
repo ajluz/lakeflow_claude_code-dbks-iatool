@@ -457,3 +457,135 @@ T001, and `fato_venda` has 420,472 rows. The pipeline is `IDLE`; the warehouse i
 - Three-level names, 6 output columns, comments in Portuguese.
 
 No full refresh or table drop was run.
+
+---
+
+## Revision 2026-11-06: inner joins to the dimensions
+
+**Input**: spec Clarifications 2026-11-06 (access lookup stays a left join from the sales;
+the four dimension lookups become inner joins; course rule made total), plan "Revision
+(2026-11-06)", research Decisions 2, 4, 5, 9 and 10, quickstart step 0.
+
+**Organization**: one file changes, `src/pipeline/03_gold/07_fato_venda.sql`. The change
+belongs to US2 (every row points to a dimension row); US1 and US3 are re-validated because
+their parts of the query run in the same statement. One ordinary update applies it: run as a
+batch, the new query yields the stored rows unchanged (research, Decision 10). **No full
+refresh.** The conventions at the top of this file apply.
+
+## Phase 7: Setup (revision)
+
+- [X] T019 Confirm the preconditions and record them in the Implementation Notes under a new heading "Revision 2026-11-06":
+  - pipeline `8d51ac7a-02be-4ce2-8afd-f4f263e448dd` is `IDLE`;
+  - `src/pipeline/03_gold/07_fato_venda.sql` is identical to the workspace copy (`cmp` of the export);
+  - baseline counts: `tb_venda` 420,472, `fato_venda` 420,472, `dim_tempo` 3,654, `dim_usuario` 956,251, `dim_codigos` 62, `dim_curso` 5;
+  - baseline checksum `sum(hash(sk_tempo, sk_codigos, sk_curso, sk_usuario, valor_desconto, valor_pago))` of `fato_venda` = 581165462078.
+  If a count or the checksum differs, stop and report it to the owner.
+
+## Phase 8: Foundational (revision) — coverage gate
+
+**Blocks Phase 9.** Constitution v3.1.0, Principle V: an inner join is accepted only after an anti join of the source against the dimension returns 0.
+
+- [X] T020 Run quickstart.md step 0 against the current data (the CTE `vendas` of `src/pipeline/03_gold/07_fato_venda.sql` without `STREAM`, and `versoes_curso` with `proximo_inicio` and `primeiro_inicio`):
+  - the four anti joins (`dim_tempo`, `dim_codigos`, `versoes_curso` with the new course rule, `dim_usuario`) each return 0;
+  - the full new query run as a batch returns 420,472 rows and checksum 581165462078.
+  Record the five results. **If any differs, stop**: the change would drop or move sales; report to the owner.
+
+## Phase 9: User Story 2 - Every row points to a dimension row (Priority: P1)
+
+**Goal**: the four dimension lookups are inner joins with proven coverage, and the course rule always finds one version.
+
+**Independent Test**: quickstart.md step 3 (no key below 0, star join 420,472, checksum unchanged) and step 5.
+
+- [X] T021 [US2] Change `src/pipeline/03_gold/07_fato_venda.sql`, keeping the CTE `vendas` and its `LEFT JOIN workspace.silver.tb_acesso` unchanged:
+  - **Header comment (Portuguese)**: replace the `LEFT JOIN … -1 … Não há inner join` lines. State that:
+    - the four dimensions use inner joins (Kimball), because each covers every sale: the calendar 2021–2030, every code combination, every course's version through the course rule, and every user since 2026-11-06; coverage was verified by anti join = 0 before the change (constitution v3.1.0, Princípio V);
+    - the access lookup stays a `LEFT JOIN` from the sales, so only accesses that ended in a purchase are read, and the file sales and site sales without an access stay in the fact;
+    - the course rule: a version is valid from its `__START_AT` until the next version's `__START_AT`; a sale older than the first version takes the first version; never only `__END_AT IS NULL`;
+    - keys are resolved once; a dimension row that arrived in a later update would drop the sale under the inner join, and the row-count check after each load would show it.
+  - **Comment above `vendas`**: say that the left join reads only the accesses of sales.
+  - **CTE `versoes_curso`**: `SELECT sk_curso, curso_uuid, __START_AT, lead(__START_AT) OVER (PARTITION BY curso_uuid ORDER BY __START_AT) AS proximo_inicio, min(__START_AT) OVER (PARTITION BY curso_uuid) AS primeiro_inicio FROM workspace.gold.dim_curso WHERE sk_curso > 0` (drop `__END_AT`).
+  - **Final `SELECT`**: `t.sk_tempo`, `c.sk_codigos`, `k.sk_curso`, `u.sk_usuario`, `s.valor_desconto`, `s.valor_pago`, in that order, with no `coalesce`.
+  - **Joins**: replace each of the four `LEFT JOIN`s with `JOIN`, with the same keys. The course condition becomes `k.curso_uuid = s.curso_uuid AND ((k.__START_AT <= s.data_venda AND (k.proximo_inicio IS NULL OR s.data_venda < k.proximo_inicio)) OR (s.data_venda < k.primeiro_inicio AND k.__START_AT = k.primeiro_inicio))`, with its Portuguese comment updated to the new rule.
+  - Nothing else changes: same table name, `COMMENT`, `TBLPROPERTIES ("quality" = "gold")`, `STREAM(workspace.silver.tb_venda)`.
+- [X] T022 [US2] Upload, compare, dry run, then an ordinary update, following the conventions:
+  - upload with `import-dir --overwrite`, then `cmp` the exported `03_gold/07_fato_venda.sql`: no difference;
+  - dry run `--validate-only` to `COMPLETED`. If it rejects the window functions in the static CTE or the inner join to a stream, record the error and stop to ask the owner; do not fall back to left joins on your own;
+  - at least 4 minutes later, an ordinary update (no `--full-refresh`, no `full_refresh_selection`) to `COMPLETED`; record both update ids.
+- [X] T023 [US2] Run quickstart.md step 3 and step 5 for the update of T022:
+  - `vazias` 0; `tempo_membro`, `codigos_membro`, `curso_membro`, `usuario_membro` each 0; `cursos` 3; `combinacoes` 22;
+  - star join with inner joins to the four dimensions = 420,472;
+  - checksum = 581165462078 (unchanged; the stored sales were not reprocessed);
+  - step 5: 3 rows, one per course, each its only version, totalling 420,472.
+
+## Phase 10: Re-validation of US1 and US3
+
+- [X] T024 [P] [US1] Run quickstart.md step 2 for the update of T022: `linhas_fato` = `linhas_silver` = 420,472; `dif_pago` and `dif_desconto` 0.00 (SC-001, SC-002)
+- [X] T025 [P] [US3] Run quickstart.md step 4 for the update of T022: `ARQUIVO` only with `Não se aplica` (200,000); `API` never with `Não se aplica`; `API` with `Desconhecido` 2,174 (SC-004, SC-005)
+
+## Phase 11: Polish (revision)
+
+- [X] T026 At least 4 minutes after T022, run a second ordinary update with no code change. Confirm `fato_venda` stays 420,472 rows with checksum 581165462078, and that `dim_usuario` 956,251, `dim_codigos` 62, `dim_curso` 5, `dim_tempo` 3,654, `tb_venda` 420,472 and `tb_acesso` 2,516,192 are unchanged (quickstart step 6). Stop the warehouse with `--no-wait`
+- [X] T027 [P] Update `doc/pipeline-reference.md`:
+  - **`### fato_venda`**:
+    - the column table: drop "no match → `-1`" from the four keys; `sk_curso` uses the new course rule (valid until the next version's `__START_AT`; first version for older sales);
+    - **Reconciliation**: the four dimension lookups are inner joins with coverage proven by anti join = 0 (2026-11-06; constitution v3.1.0, Principle V), and the access lookup is a `LEFT JOIN` from the sales;
+    - **Keys resolved once**: a late dimension row would drop the sale, caught by the row-count check;
+    - the 2026-11-05 results: `sk_usuario = -1` for 0 sales since 2026-11-06, and no key below 0, with the update id of T022. Line 507 is also listed in feature 006's T031; whichever runs first updates it, and the other only confirms.
+  - Line 346 (`dim_tempo`, "Use by facts") and line 415 (`dim_curso`, "Current version"): a fact uses an inner join; the course rule is the one above.
+- [X] T028 [P] Update `doc/architecture.md` line 135 (features table: "stream-static lookups, inner joins to the dimensions with proven coverage, `LEFT JOIN` to the accesses; SCD 2 version in effect at the event"), `doc/README.md` line 53 (`07_fato_venda.sql`: "stream-static inner joins to the dimensions") and `doc/known-issues.md` lines 21–22 (`fato_venda` does not drop sales: the dimension lookups are inner joins with proven coverage, and the access lookup is a left join)
+- [X] T029 Final review: `07_fato_venda.sql` identical in the workspace; no `coalesce(` and no `LEFT JOIN workspace.gold.` left in it; the documents of T027 and T028 contain no "`LEFT JOIN` … `-1`" statement about `fato_venda`; record the summary in the Implementation Notes
+
+### Dependencies (revision)
+
+T019 → T020 (gate) → T021 → T022 → T023, then T024 and T025 in parallel → T026. T027 and T028 can run any time after T022, in parallel. T029 last.
+
+### Implementation strategy (revision)
+
+Gate first: no code changes before T020 passes. Then a single code change and one ordinary update. The stored rows don't move, so the change is safe to apply incrementally.
+
+## Implementation Notes: Revision 2026-11-06
+
+**T019**: pipeline `IDLE`; `07_fato_venda.sql` identical in the workspace. Baseline:
+`tb_venda` 420,472, `fato_venda` 420,472, `dim_tempo` 3,654, `dim_usuario` 956,251,
+`dim_codigos` 62, `dim_curso` 5, `tb_acesso` 2,516,192; fact checksum 581165462078.
+
+**T020** (coverage gate): anti joins of the sales against `dim_tempo`, `dim_codigos`,
+`versoes_curso` (new course rule) and `dim_usuario` all 0; no `curso_uuid` absent from
+`dim_curso`. Sales run from 2024-06-01 to 2025-12-23, and the calendar from 2021-01-01 to
+2030-12-31. The new query as a batch gives 420,472 rows and checksum 581165462078, equal to
+the stored fact. The course rule was also tested on synthetic versions (before the first,
+in v1, in v2, after a delete, in v3 after a re-insert): exactly one match each.
+
+**T021**: `07_fato_venda.sql` now has inner joins to the four dimensions, `versoes_curso` with
+`proximo_inicio` (`lead`) and `primeiro_inicio`, no `coalesce` on the keys, and the access
+`LEFT JOIN` unchanged. The header and comments were rewritten in Portuguese.
+
+**T022**: upload identical; dry run `11446c10` `COMPLETED` (the window functions in the
+static CTE and the inner stream-static joins were accepted); ordinary update
+`69381807-9d86-4ce0-a7c2-197e1ed77a95` `COMPLETED`, with `full_refresh` false and no
+selection.
+
+**T023**: `vazias` 0; no key below 0; `cursos` 3; `combinacoes` 22; star join 420,472;
+checksum 581165462078, unchanged. Step 5: Programa Data Heroes 169,871, Mastering SQL no
+Databricks 114,942, Construindo um Data Lakehouse com SQL e DLT 135,659 (total 420,472),
+each on its only, open version.
+
+**T024**: 420,472 = 420,472; `dif_pago` and `dif_desconto` 0.00.
+
+**T025**: `ARQUIVO` / `Não se aplica` 200,000; `API` / `Desconhecido` 2,174; `API` /
+`Não se aplica` 0.
+
+**T026**: second update `e512631c-52db-4930-b838-587564b292b7` `COMPLETED`; `fato_venda` 420,472
+with checksum 581165462078, and every other count unchanged. Warehouse stop requested.
+
+**T027, T028**: `doc/pipeline-reference.md` (`### fato_venda`: columns, reconciliation with
+the four coverage guarantees, keys resolved once, the 2026-11-06 results; `dim_tempo` "Use by
+facts"; `dim_curso` "Current version"), `doc/architecture.md`, `doc/README.md` and
+`doc/known-issues.md`. The `### fato_venda` results paragraph (feature 006's T031, line 507)
+is done here. Feature 006's T031 still owns the other lines it lists (`tb_venda` "Keys that
+do not join", the `dim_usuario` section).
+
+**T029**: the workspace copy is identical. No `LEFT JOIN workspace.gold.` is left in the fact.
+Three `coalesce(` calls remain in the CTE `vendas`: they are the sale codes' defaults
+(`Desconhecido` / `Não se aplica`, FR-008), not key fallbacks. The documents of T027 and T028
+no longer describe `fato_venda` with `LEFT JOIN` and `-1`.

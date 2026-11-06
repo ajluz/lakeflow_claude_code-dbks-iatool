@@ -91,8 +91,9 @@ user, so that a fact whose user is missing or does not apply still points to a r
 fact row is lost in a join.
 
 **Why this priority**: the constitution requires these members, and the data needs them
-today: 4,362 users referenced by sales are not in silver (their sex failed the user
-rule), and 1,767,621 accesses have no user at all.
+today: 1,767,621 accesses have no user at all. Until 2026-11-06, 4,362 users referenced by
+sales were also missing from silver, because their sex failed the user rule; silver now keeps
+them with an empty sex (feature 006).
 
 **Independent Test**: after a run, the dimension has exactly one "unknown" row and one
 "not applicable" row, each with its own fixed surrogate key and a fixed business key, and
@@ -111,9 +112,9 @@ each recognizable by its attributes.
 
 ### Edge Cases
 
-- **A sale references a user that silver rejected.** The dimension has no row for that user
-  (2026-11-06: no inferred users). The fact resolves the sale to `-1` through a left join, so
-  no sale is lost.
+- **A sale references a user that silver rejected.** It cannot happen since 2026-11-06:
+  silver drops no user (feature 006), so every sale's user has a row, and `fato_venda` uses an
+  inner join (feature 013). There are no inferred users.
 - **A user reappears in silver with changed attributes.** Silver appends and does not
   merge (feature 006), so today each key occurs once. If a key ever occurred twice, the
   dimension would still hold one row per key (SCD type 1: latest values win) and keep its
@@ -188,7 +189,7 @@ each recognizable by its attributes.
 ### Measurable Outcomes
 
 - **SC-001**: Rows in `dim_usuario` = distinct users in `silver.tb_usuario` + 2, with a
-  difference of 0 (941,236 on 2026-11-06).
+  difference of 0 (956,251 on 2026-11-06, after silver kept every user).
 - **SC-002**: 0 rows have an empty `sk_usuario` or `usuario_uuid`; no two rows share
   either.
 - **SC-003**: For 100% of silver users, the dimension's attributes equal silver's.
@@ -196,9 +197,8 @@ each recognizable by its attributes.
   surrogate keys are unchanged, including the two members', and 100% of rows keep the same
   `data_carga`.
 - **SC-005**: Exactly 1 "unknown" row and 1 "not applicable" row exist.
-- **SC-006**: 100% of `usuario_uuid` values referenced by silver sales either have a row
-  or, when absent (4,362 on 2026-11-06, users silver rejected), resolve to the "unknown"
-  member in the fact.
+- **SC-006**: 100% of `usuario_uuid` values referenced by silver sales have a row (0 absent
+  on 2026-11-06).
 
 ## Assumptions
 

@@ -50,7 +50,7 @@ lakeflow/
 │           ├── 04_vw_gold_dim_curso_dados_database.sql  Flow view: surrogate key per course version
 │           ├── 05_vw_gold_dim_curso_membros.sql         Course dimension members -1 / -2
 │           ├── 06_dim_curso.sql          Course dimension: AUTO CDC SCD type 2, members by a once-only flow
-│           └── 07_fato_venda.sql         Sales fact: streaming table over tb_venda, stream-static LEFT JOIN lookups with -1
+│           └── 07_fato_venda.sql         Sales fact: streaming table over tb_venda, stream-static inner joins to the dimensions
 ├── explorations/            Auxiliary code: setup, generators and notebooks
 │   ├── setup/               Environment preparation, run by hand in step order
 │   │   ├── 01_schemas.sql                Creates the schemas and applies the access rule

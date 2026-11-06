@@ -1,7 +1,28 @@
 # Quickstart: Gold Sales Fact
 
 Validates the feature end to end. Expected values come from [spec.md](spec.md) and
-[data-model.md](data-model.md), as of 2026-11-05.
+[data-model.md](data-model.md), as of 2026-11-06 (inner joins to the dimensions).
+
+## 0. Coverage before the change (Principle V, SC-006)
+
+Before the inner joins are uploaded, each anti join of the sales against a dimension must
+return 0. Use the CTE `vendas` of `07_fato_venda.sql` without `STREAM`:
+
+```sql
+-- with vendas as in the fact, and versoes_curso with proximo_inicio and primeiro_inicio
+SELECT count(*) FROM vendas s LEFT ANTI JOIN workspace.gold.dim_tempo t ON t.data = CAST(s.data_venda AS DATE);   -- 0
+SELECT count(*) FROM vendas s LEFT ANTI JOIN workspace.gold.dim_codigos c
+  ON c.origem_usuario = s.origem_usuario AND c.local_acesso = s.local_acesso
+ AND c.forma_pagamento = s.forma_pagamento AND c.percentual_desconto = s.percentual_desconto;                       -- 0
+SELECT count(*) FROM vendas s LEFT ANTI JOIN versoes_curso k ON k.curso_uuid = s.curso_uuid
+ AND ((k.__START_AT <= s.data_venda AND (k.proximo_inicio IS NULL OR s.data_venda < k.proximo_inicio))
+   OR (s.data_venda < k.primeiro_inicio AND k.__START_AT = k.primeiro_inicio));                                     -- 0
+SELECT count(*) FROM vendas s LEFT ANTI JOIN workspace.gold.dim_usuario u ON u.usuario_uuid = s.usuario_uuid;      -- 0
+```
+
+The same new query, run as a batch, returns 420,472 rows with checksum 581165462078, equal to
+the stored fact (research, Decision 10). If any count differs, stop: the change would
+drop or move sales.
 
 ## Prerequisites
 
@@ -21,7 +42,7 @@ databricks pipelines start-update 8d51ac7a-02be-4ce2-8afd-f4f263e448dd --profile
 
 Expected:
 - both runs end `COMPLETED`;
-- `fato_venda` is created as a `STREAMING_TABLE`;
+- `fato_venda` stays a `STREAMING_TABLE`, updated in place;
 - no other dataset fails;
 - this is not a full refresh.
 
@@ -42,10 +63,10 @@ SELECT
 ```sql
 SELECT
   count_if(sk_tempo IS NULL OR sk_codigos IS NULL OR sk_curso IS NULL OR sk_usuario IS NULL) AS vazias, -- 0
-  count_if(sk_tempo = -1)   AS tempo_desconhecido,    -- 0
-  count_if(sk_codigos = -1) AS codigos_desconhecido,  -- 0
-  count_if(sk_curso = -1)   AS curso_desconhecido,    -- 0
-  count_if(sk_usuario = -1) AS usuario_desconhecido,  -- 4362
+  count_if(sk_tempo < 0)    AS tempo_membro,          -- 0
+  count_if(sk_codigos < 0)  AS codigos_membro,        -- 0
+  count_if(sk_curso < 0)    AS curso_membro,          -- 0
+  count_if(sk_usuario < 0)  AS usuario_membro,        -- 0
   count(DISTINCT sk_curso)   AS cursos,                -- 3
   count(DISTINCT sk_codigos) AS combinacoes            -- 22
 FROM workspace.gold.fato_venda;
@@ -91,12 +112,14 @@ Expected:
 
 - A second ordinary update with no new sales leaves the row count and
   `sum(hash(sk_tempo, sk_codigos, sk_curso, sk_usuario, valor_desconto, valor_pago))`
-  unchanged. The stream reads 0 new rows, and no sale is processed twice.
+  unchanged (420,472 and 581165462078 on 2026-11-06). The stream reads 0 new rows, and no
+  sale is processed twice. The update that applies the inner joins leaves them unchanged
+  too.
 - Silver, bronze and the four dimensions keep their counts:
 
   | Dataset | Rows |
   |---|---|
-  | `dim_usuario` | 941,236 |
+  | `dim_usuario` | 956,251 |
   | `dim_codigos` | 62 |
   | `dim_curso` | 5 |
   | `dim_tempo` | 3,654 |

@@ -33,9 +33,10 @@ could be treated as deleted.
 ## What consumers may rely on
 
 - One row per `usuario_uuid`; `sk_usuario` and `usuario_uuid` unique and never null.
-- **No coverage guarantee**: users that silver rejected (4,362 referenced by sales on
-  2026-11-06) have no row. A fact MUST look them up with a left join and `-1`, not an inner join
-  (inferred users were tried on 2026-11-05 and undone on 2026-11-06).
+- **Coverage of sales users**: since 2026-11-06 every user referenced by `silver.tb_venda` has a
+  row, because silver drops no user (feature 006); `fato_venda` relies on it with an inner join
+  verified by anti join = 0 (feature 013). A new fact must verify its own coverage before using
+  an inner join. Inferred users were tried on 2026-11-05 and undone on 2026-11-06.
 - `sk_usuario` never changes for a given user, whatever is refreshed.
 - `sk_usuario = -1` is "unknown", `-2` is "not applicable"; both always exist. No other key
   is negative.

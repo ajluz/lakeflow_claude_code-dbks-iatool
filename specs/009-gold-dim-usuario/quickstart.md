@@ -23,7 +23,7 @@ SELECT count(*) AS usuarios, count(DISTINCT usuario_uuid) AS chaves,
 FROM workspace.silver.tb_usuario;
 ```
 
-Expected: 941,234, 941,234, 941,234 (no hash collision), and 0 null sequence values.
+Expected: 956,249, 956,249, 956,249 (no hash collision), and 0 null sequence values (941,234 before 2026-11-06).
 
 ## 2. Upload, dry run, run
 
@@ -67,11 +67,11 @@ SELECT concat_ws(', ', collect_list(concat(column_name, ' ', full_data_type))) F
 ```
 
 Expected:
-- `linhas` = `sk` = `bk` = 941,236; `chave_vazia` 0; `membros` 2; `api` 741,234;
-  `arquivo` 200,000;
+- `linhas` = `sk` = `bk` = 956,251; `chave_vazia` 0; `membros` 2; `api` 756,249;
+  `arquivo` 200,000 (941,236 and 741,234 before 2026-11-06);
 - the two members as in the data model;
 - `divergentes` 0;
-- `sem_dimensao` 4,362;
+- `sem_dimensao` 0 (4,362 before 2026-11-06);
 - the 11 columns of the data model, in order, `sk_usuario bigint`;
 - `SHOW TBLPROPERTIES workspace.gold.dim_usuario ('quality')` is `gold`.
 
@@ -92,7 +92,7 @@ WHERE sk_usuario < 0 OR usuario_uuid IN (
 
 Run another update (no new data). Run the same query: every row is identical, `data_carga`
 included (`AUTO CDC` rewrites nothing when no silver row arrives), and the row count is
-still 941,236.
+still 956,251.
 
 ## 6. Inferred users (2026-11-05, FR-013)
 

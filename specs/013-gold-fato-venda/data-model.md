@@ -4,15 +4,15 @@
 
 ```text
 STREAM(silver.tb_venda) ──┐   (incremental: each sale processed once)
-silver.tb_acesso ─────────┤   (static; location of site sales only, LEFT JOIN)
+silver.tb_acesso ─────────┤   (static; location of site sales only, LEFT JOIN from the sales)
                   ▼
             vendas (CTE: one row per sale, the 4 codes, measures, date, user, course)
-                  │  LEFT JOIN gold.dim_tempo    ON data = CAST(data_venda AS DATE)
-                  │  LEFT JOIN gold.dim_codigos  ON the 4 codes
-                  │  LEFT JOIN versoes_curso     ON curso_uuid + version in effect / first version
-                  │  LEFT JOIN gold.dim_usuario  ON usuario_uuid
+                  │  JOIN gold.dim_tempo    ON data = CAST(data_venda AS DATE)
+                  │  JOIN gold.dim_codigos  ON the 4 codes
+                  │  JOIN versoes_curso     ON curso_uuid + course rule (FR-005)
+                  │  JOIN gold.dim_usuario  ON usuario_uuid
                   ▼
-workspace.gold.fato_venda  (streaming table; dimensions read static; every key coalesce(…, -1))
+workspace.gold.fato_venda  (streaming table; dimensions read static; inner joins with proven coverage)
 ```
 
 ## `workspace.gold.fato_venda` (streaming table)
@@ -21,53 +21,57 @@ workspace.gold.fato_venda  (streaming table; dimensions read static; every key c
 
 | # | Column | Type | Resolution | Kind |
 |---|---|---|---|---|
-| 1 | `sk_tempo` | BIGINT | `dim_tempo` row whose `data` = the sale's day; else `-1` | dimension key |
-| 2 | `sk_codigos` | BIGINT | `dim_codigos` row matching all four codes (below); else `-1` | dimension key |
-| 3 | `sk_curso` | BIGINT | `dim_curso` version in effect at `data_venda`, or the course's first version if the sale is older; else `-1` | dimension key |
-| 4 | `sk_usuario` | BIGINT | `dim_usuario` row with the sale's `usuario_uuid`; else `-1` | dimension key |
+| 1 | `sk_tempo` | BIGINT | `dim_tempo` row whose `data` = the sale's day | dimension key |
+| 2 | `sk_codigos` | BIGINT | `dim_codigos` row matching all four codes (below) | dimension key |
+| 3 | `sk_curso` | BIGINT | `dim_curso` version picked by the course rule (below) | dimension key |
+| 4 | `sk_usuario` | BIGINT | `dim_usuario` row with the sale's `usuario_uuid` | dimension key |
 | 5 | `valor_desconto` | DECIMAL(9,2) | `tb_venda.valor_desconto` | measure, additive |
 | 6 | `valor_pago` | DECIMAL(9,2) | `tb_venda.valor_pago` | measure, additive |
+
+Each dimension lookup is an inner join. Its coverage is guaranteed and verified by an anti
+join that returns 0 (research, Decision 2). No key uses `-1` or `-2`.
 
 ### The four sale codes (as in `dim_codigos`)
 
 | Code | Value |
 |---|---|
 | `origem_usuario` | `tb_venda.origem` (`API`, `ARQUIVO`) |
-| `local_acesso` | `ARQUIVO` → `Não se aplica`; `API` → `tb_acesso.local_acesso` by `acesso_uuid`, `Desconhecido` when there is no access row |
+| `local_acesso` | `ARQUIVO` → `Não se aplica`, never looked up; `API` → `tb_acesso.local_acesso` by `acesso_uuid`, `Desconhecido` when there is no access row |
 | `forma_pagamento` | `tb_venda.forma_pagamento`, `Desconhecido` when empty |
 | `percentual_desconto` | `tb_venda.percentual_desconto`, `Não se aplica` when empty |
 
-### Course version rule (FR-005)
+The access lookup is a left join from the sales, so only accesses that ended in a purchase
+are read (FR-009).
 
-For a sale at `data_venda` and its course's versions, members excluded:
-1. **In effect**: `__START_AT ≤ data_venda` and (`__END_AT` is empty or `data_venda < __END_AT`).
-2. **Otherwise, if the sale is older than the first version**: the version with the earliest
-   `__START_AT`.
-3. **Otherwise**: `-1`, for a sale in a gap after a deletion or after the last version
-   closed.
+### Course rule (FR-005)
 
-The three cases are mutually exclusive, so a sale gets at most one version. The lookup is
-never limited to `__END_AT IS NULL`.
+For a sale at `data_venda` and its course's versions, members excluded, each version is
+valid from its `__START_AT` until the next version's `__START_AT` (open for the latest):
+1. **In effect**: the version whose window contains `data_venda`. After a deletion, or in a
+   gap before a re-insertion, this is the last version that started before the sale.
+2. **Older than every version**: the version with the earliest `__START_AT`.
+
+The two cases are mutually exclusive and cover every date, so a sale whose course has any
+version gets exactly one. The lookup is never limited to `__END_AT IS NULL`.
 
 ### Invariants (checked by query)
 
-- Row count = `silver.tb_venda` row count.
+- Row count = `silver.tb_venda` row count, after every load.
 - `sum(valor_pago)` and `sum(valor_desconto)` = silver's.
-- No key is empty. Every key exists in its dimension.
+- No key is empty or below 0. Every key exists in its dimension.
+- Anti join of `silver.tb_venda` against each dimension = 0.
 - File sales' codes have `local_acesso = 'Não se aplica'`; site sales' codes never do.
 
-## Expected values (2026-11-05)
+## Expected values (2026-11-06)
 
 | Measure | Value |
 |---|---|
 | Rows | 420,472 (API 220,472, ARQUIVO 200,000) |
-| `sk_tempo = -1` | 0 |
-| `sk_usuario = -1` | 4,362 |
-| `sk_codigos = -1` | 0 |
+| Keys below 0 | 0 in each of the four keys |
 | Site sales with location `Desconhecido` | 2,174 |
-| `sk_curso = -1` | 0 |
 | Distinct `sk_curso` | 3, each course's only version |
-| Distinct `sk_codigos` | 22 (as counted in feature 011) |
+| Distinct `sk_codigos` | 22 |
+| Checksum `sum(hash(sk_tempo, sk_codigos, sk_curso, sk_usuario, valor_desconto, valor_pago))` | 581165462078, unchanged by this revision |
 
 Keys are resolved once, when a sale is processed (research, Decision 9). At the live
 demo, after `update row` and `delete row`, every existing sale keeps its `sk_curso`: it was

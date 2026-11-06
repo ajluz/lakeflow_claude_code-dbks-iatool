@@ -130,7 +130,7 @@ run for this feature.
   - passed + failed = 956,249 for each rule.
 
   Reconcile: 956,249 candidates = 941,234 rows + 15,015 dropped. Confirm `tb_quarentena` is still 9,240.
-- [ ] T015 [US3] Ask the owner to confirm that the Data quality tab of `tb_usuario` shows the three expectations. Record the answer
+- [X] T015 [US3] Ask the owner to confirm that the Data quality tab of `tb_usuario` shows the three expectations. Record the answer
 
 ---
 
@@ -325,24 +325,113 @@ still counts those rows as failures, which is the informative record the owner a
 - [X] T021 In `src/pipeline/02_silver/08_tb_usuario.sql` line 12, comment out the action and keep the expectation: `CONSTRAINT check_sexo_usuario  EXPECT (sexo_usuario IS NOT NULL AND sexo_usuario IN ('M', 'F')), -- ON VIOLATION DROP ROW`. The comma stays before the comment. Rewrite the header lines 6–8 in Portuguese: `check_sexo_usuario` is now informative (owner, 2026-11-06; the `ON VIOLATION DROP ROW` is kept commented out to show the change), the views put the sex as NULL when it is not `M` or `F`, and the rule counts those rows. `check_email_usuario` still only measures. Nothing else in the file changes per owner request 2026-11-06 (contradicts)
 - [X] T022 [P] In `src/pipeline/02_silver/06_vw_silver_tb_usuario_api.sql`, replace `payload.info_usuario.sexo AS sexo_usuario` with `CASE WHEN payload.info_usuario.sexo IN ('M', 'F') THEN payload.info_usuario.sexo END AS sexo_usuario`. Add a header line in Portuguese saying that a sex other than `M` or `F` becomes NULL. Columns, order and types are unchanged per owner request 2026-11-06 (missing)
 - [X] T023 [P] In `src/pipeline/02_silver/07_vw_silver_tb_usuario_files.sql`, replace `sexo AS sexo_usuario` with `CASE WHEN sexo IN ('M', 'F') THEN sexo END AS sexo_usuario`, with the same header line as T022 per owner request 2026-11-06 (missing)
-- [ ] T024 **Stop and ask the owner** before deploying. Changing the code affects new rows only (FR-013). The 15,015 users already dropped come back only through a full refresh of `workspace.silver.tb_usuario`. That refresh rewrites the source of `dim_usuario`'s stream, so `workspace.gold.dim_usuario` needs a full refresh too. `fato_venda` set its keys once, so its 4,362 sales with `sk_usuario = -1` keep that key unless `workspace.gold.fato_venda` is also fully refreshed. Ask which to approve: (a) no refresh, so only new users are affected; (b) `tb_usuario` + `dim_usuario`; (c) `tb_usuario` + `dim_usuario` + `fato_venda`. Use `full_refresh_selection` with exactly the approved tables, never a full pipeline refresh. Record the answer in the Implementation notes per FR-013, Constitution workflow (full refresh needs approval) (partial)
-- [ ] T025 Upload with `databricks workspace import-dir src/pipeline /Workspace/Users/arthur.luz@dataslight.com.br/lakeflow_dev/src/pipeline --overwrite --profile databricks-free` and confirm the three changed files are identical in the workspace. Following the quota conventions, run a dry run (`--validate-only`) to `COMPLETED`, then the update chosen in T024 to `COMPLETED`, and record its `update_id` per owner request 2026-11-06 (partial)
-- [ ] T026 Validate against the update of T025, with `--profile databricks-free`:
+- [X] T024 **Stop and ask the owner** before deploying. Changing the code affects new rows only (FR-013). The 15,015 users already dropped come back only through a full refresh of `workspace.silver.tb_usuario`. That refresh rewrites the source of `dim_usuario`'s stream, so `workspace.gold.dim_usuario` needs a full refresh too. `fato_venda` set its keys once, so its 4,362 sales with `sk_usuario = -1` keep that key unless `workspace.gold.fato_venda` is also fully refreshed. Ask which to approve: (a) no refresh, so only new users are affected; (b) `tb_usuario` + `dim_usuario`; (c) `tb_usuario` + `dim_usuario` + `fato_venda`. Use `full_refresh_selection` with exactly the approved tables, never a full pipeline refresh. Record the answer in the Implementation notes per FR-013, Constitution workflow (full refresh needs approval) (partial)
+- [X] T025 Upload with `databricks workspace import-dir src/pipeline /Workspace/Users/arthur.luz@dataslight.com.br/lakeflow_dev/src/pipeline --overwrite --profile databricks-free` and confirm the three changed files are identical in the workspace. Following the quota conventions, run a dry run (`--validate-only`) to `COMPLETED`, then the update chosen in T024 to `COMPLETED`, and record its `update_id` per owner request 2026-11-06 (partial)
+- [X] T026 Validate against the update of T025, with `--profile databricks-free`:
   - in the expectations of `tb_usuario`, `check_sexo_usuario` has failures but drops no rows: the dropped count is 0, and passed + failed = rows written;
   - `SELECT sexo_usuario, count(*) FROM workspace.silver.tb_usuario GROUP BY ALL` shows only `M`, `F` and NULL;
   - with refresh (b) or (c): `tb_usuario` = 956,249 rows (941,234 + 15,015), the NULL sex count = 15,015, `usuario_uuid` is unique and never empty, and `dim_usuario` = 956,251 (2 members included);
   - with refresh (c): `fato_venda` = `silver.tb_venda` rows, the sums of `valor_pago` and `valor_desconto` equal silver's, and `count_if(sk_usuario = -1) = 0`;
   - `tb_quarentena` (9,240) and `tb_acesso` are unchanged;
   - re-measure first if bronze changed since 2026-11-06, per SC-003, SC-004, SC-007 (partial)
-- [ ] T027 Record the owner's decision in this feature's documents, with no contradictory text left:
+- [X] T027 Record the owner's decision in this feature's documents, with no contradictory text left:
   - in `spec.md`: rewrite FR-008 (the rule only counts; the sex is NULL when not `M`/`F`) and FR-009 (no declared exclusion any more); update US3 and its scenarios, and SC-001, SC-002 and SC-003 (sex is `M`, `F` or empty; no row removed); replace the "Drop the row" Assumption; add a `### Session 2026-11-06` clarification;
   - in `plan.md`: add a "Revision 2026-11-06" section at the top;
   - in `data-model.md`, `contracts/silver-tb-usuario.md` and `quickstart.md`: the expected counts of T026;
   - per FR-008, FR-009, US3, SC-001–SC-003 (contradicts)
-- [ ] T028 [P] Update the project documentation per FR-015 (contradicts):
+- [X] T028 [P] Update the project documentation per FR-015 (contradicts):
   - `doc/pipeline-reference.md` line 204: `check_sexo_usuario` becomes "warn only; the views put the sex as NULL when not `M`/`F`";
   - `doc/pipeline-reference.md` line 209: remove the reconciliation exclusion;
   - `doc/data-generation.md` line 49: `X` becomes "kept in `tb_usuario` with an empty sex";
   - `specs/013-gold-fato-venda` (data-model, quickstart, contract, research Decision 9) and `specs/009-gold-dim-usuario`: replace the "4,362 sales whose user silver rejects" explanation with the counts T026 measured;
   - `doc/known-issues.md`: update any entry that mentions the dropped users.
-- [ ] T029 Ask the owner to confirm that the Data quality tab of `tb_usuario` shows the three expectations, with `check_sexo_usuario` reporting failures and no dropped rows. Record the answer; it also closes T015 per T015, US3 (partial)
+- [X] T029 Ask the owner to confirm that the Data quality tab of `tb_usuario` shows the three expectations, with `check_sexo_usuario` reporting failures and no dropped rows. Record the answer; it also closes T015 per T015, US3 (partial)
+
+## Phase 10: Convergence
+
+- [X] T030 Record in the Implementation notes, then tick T024, T025, T026 and T027 per FR-013, T024–T027 (partial):
+  - **T024**: the owner approved option (c).
+  - **The refresh that ran**: `databricks pipelines start-update` has no `--full-refresh-selection` flag (CLI v1.11.0), so the agent's refresh never started; a selection is passed as `--json '{"full_refresh_selection":[...]}'`. The owner then ran update `dd4ab1a3-6445-41bc-ade2-683aad617f61`, a **full refresh of the whole pipeline** (`full_refresh: true`), which the owner started and so approved.
+  - **T025**: upload identical; dry run `2d23ed87` `COMPLETED`; update `dd4ab1a3` `COMPLETED`.
+  - **T026**, measured on 2026-11-06:
+    - `tb_usuario` 956,249 rows: API M 370,491, F 370,743, NULL 15,015; ARQUIVO M 100,550, F 99,450; 0 repeated or empty keys;
+    - event log: `check_sexo_usuario` API 741,234 passed / 15,015 failed, files 200,000 / 0; `check_email_usuario` API 30,190 failed; `check_usuario_uuid` 0 failed; 0 dropped rows on both flows; the API flow wrote 756,249 rows and the files flow 200,000;
+    - `dim_usuario` 956,251 rows, 956,251 distinct keys, 15,015 NULL sex;
+    - `fato_venda` 420,472 rows: `sk_usuario = -1` 0, no other `-1`, `valor_pago` and `valor_desconto` differences 0.00, star join 420,472, checksum 581165462078; 0 sales of `tb_venda` without a user in `tb_usuario`;
+    - after the whole-pipeline refresh, every other count is unchanged: `bronze.dados_api` 2,550,955, `dados_files` 200,000, `dados_database` 3, `tb_quarentena` 9,240, `tb_acesso` 2,516,192, `tb_venda` 420,472, `tb_curso` 3, `dim_codigos` 62, `dim_curso` 5 (course key checksum `-380130840`, unchanged), `dim_tempo` 3,654.
+  - **T027**: `spec.md`, `plan.md`, `data-model.md`, the contract and `quickstart.md` were updated on 2026-11-06.
+- [X] T031 Finish T028 with the counts of T030, then tick T028 per FR-015, T028 (contradicts):
+  - `doc/pipeline-reference.md`:
+    - line 270: no sale lacks its user since 2026-11-06; only the 2,174 access keys remain;
+    - lines 378–379: `-1` is no longer used by any sale for the user;
+    - line 385: 956,251 rows (`API` 756,249, `ARQUIVO` 200,000, 2 members) on 2026-11-06;
+    - line 507: `sk_usuario = -1` for 0 sales after update `dd4ab1a3`.
+  - Current-state statements in `specs/013-gold-fato-venda`, replacing "4,362 / rejected by silver" with 0, keeping history as history:
+    - `spec.md` lines 66, 112 and 199;
+    - `data-model.md` line 65;
+    - `quickstart.md` lines 48 and 99 (`dim_usuario` 956,251);
+    - `research.md` lines 146 and 187;
+    - `contracts/gold-fato-venda.md` line 16.
+  - Current-state statements in `specs/009-gold-dim-usuario`, giving 956,251 rows and full coverage of sales users:
+    - `spec.md` lines 94, 114, 191 and 200;
+    - `data-model.md` lines 65–66 and 74;
+    - `contracts/gold-dim-usuario.md` line 36;
+    - `quickstart.md` lines 70 and 74.
+- [X] T032 Ask the owner to confirm that the Data quality tab of `tb_usuario` for update `dd4ab1a3` shows `check_sexo_usuario` with 15,015 failures and no dropped rows. Record the answer and tick T029 and T015 per T029, T015, US3 (partial)
+
+## Implementation notes (2026-11-06): the informative sex rule
+
+**T021–T023**: `08_tb_usuario.sql` keeps `check_sexo_usuario` with `-- ON VIOLATION DROP ROW`
+commented out. `06_` and `07_` write `sexo_usuario` as `CASE WHEN <sexo> IN ('M', 'F') THEN
+<sexo> END`.
+
+**T024**: the owner approved option (c): a full refresh of `tb_usuario`, `dim_usuario` and
+`fato_venda`.
+
+**Refresh that ran**: the agent's command used `--full-refresh-selection`, which
+`databricks pipelines start-update` does not have (CLI v1.11.0). It never started an update,
+and its wait loop kept retrying until it was stopped. A selection is passed as
+`--json '{"full_refresh_selection":[...]}'`. The owner then ran update
+`dd4ab1a3-6445-41bc-ade2-683aad617f61`, a **full refresh of the whole pipeline**
+(`full_refresh: true`), which the owner started and so approved.
+
+**T025**: the three files are identical in the workspace; dry run
+`2d23ed87-0ee0-4524-83e1-34e07da8a06d` `COMPLETED`; update `dd4ab1a3` `COMPLETED`.
+
+**T026** (measured on 2026-11-06):
+- `tb_usuario`: 956,249 rows (941,234 before). API: M 370,491, F 370,743, NULL 15,015.
+  ARQUIVO: M 100,550, F 99,450. No key is repeated or empty.
+- Event log of `dd4ab1a3`:
+  - `check_sexo_usuario`: API 741,234 passed and 15,015 failed; files 200,000 and 0;
+  - `check_email_usuario`: API 30,190 failed; files 0;
+  - `check_usuario_uuid`: 0 failed;
+  - 0 rows dropped on both flows. The API flow wrote 756,249 rows and the files flow
+    200,000.
+- `dim_usuario`: 956,251 rows and keys; 15,015 with a NULL sex.
+- `fato_venda`: 420,472 rows; `sk_usuario = -1` for 0 sales; no other `-1`; sums equal
+  silver's; star join 420,472; checksum 581165462078. 0 sales of `tb_venda` lack a user in
+  `tb_usuario`.
+- The whole-pipeline refresh left every other count unchanged: `dados_api` 2,550,955,
+  `dados_files` 200,000, `dados_database` 3, `tb_quarentena` 9,240, `tb_acesso` 2,516,192,
+  `tb_venda` 420,472, `tb_curso` 3, `dim_codigos` 62, `dim_curso` 5 (course key checksum
+  `-380130840`, unchanged), `dim_tempo` 3,654.
+
+**T027**: on 2026-11-06, `spec.md` (a 2026-11-06 clarification, FR-008, FR-009, US3,
+SC-001–SC-003, Assumptions, the column table), `plan.md` (a 2026-11-06 revision),
+`data-model.md`, the contract and `quickstart.md` were updated.
+
+**T028, T031**: the project documentation is updated:
+- `doc/pipeline-reference.md`: the `tb_usuario` expectation table and reconciliation; the
+  `tb_venda` "Keys that do not join"; the `dim_usuario` facts paragraph and counts (956,251
+  rows on 2026-11-06); the `fato_venda` results, done in feature 013's T027;
+- `doc/data-generation.md`: sex `X` is kept with an empty sex;
+- spec 013: the current-state statements, during its 2026-11-06 clarification;
+- spec 009: `spec.md` (US priority, edge case, SC-001, SC-006), `data-model.md`, the contract
+  and `quickstart.md`.
+
+The earlier 4,362 count remains only as history ("until 2026-11-06"). `doc/known-issues.md`
+had no entry about the dropped users.
+
+**T015, T029, T032**: the owner confirmed (2026-11-06) that the Data quality tab of
+`tb_usuario` for update `dd4ab1a3` shows the three expectations, with `check_sexo_usuario` at
+15,015 failed records and 0 dropped records.

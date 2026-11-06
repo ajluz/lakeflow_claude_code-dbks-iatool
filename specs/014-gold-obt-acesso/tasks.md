@@ -139,11 +139,11 @@ file and the pipeline runs once. Each story then has its own validation task.
 
 ## Phase 7: Polish & Cross-Cutting Concerns
 
-- [ ] T011 At least 4 minutes after T007, run a second ordinary update. Confirm `obt_acesso`'s row count and three sums are unchanged, and that the other datasets keep the T001 counts (`fato_venda` checksum 581165462078 included) (quickstart step 5). Stop the warehouse with `--no-wait`
+- [X] T011 At least 4 minutes after T007, run a second ordinary update. Confirm `obt_acesso`'s row count and three sums are unchanged, and that the other datasets keep the T001 counts (`fato_venda` checksum 581165462078 included) (quickstart step 5). Stop the warehouse with `--no-wait`
 - [X] T012 [P] In `doc/architecture.md` line 134 (Materialized views row), replace the `code_tips` link with `[08_obt_acesso.sql](../src/pipeline/03_gold/08_obt_acesso.sql)`
 - [X] T013 [P] In `doc/README.md`: add `│           └── 08_obt_acesso.sql         Access one-big-table: materialized view by location, address and day` to the `03_gold/` layout (line 53's `└──` becomes `├──`); in line 82, gold becomes "3 streaming views, 3 streaming tables and 2 materialized views"
 - [X] T014 [P] In `doc/known-issues.md`, remove the sentence saying `obt_acesso` is still the earlier pipeline's `05_obt_acesso.sql` (lines 18–20), keeping the `fato_venda` sentence as its own bullet
-- [ ] T015 Final review: `08_obt_acesso.sql` identical in the workspace; no `code_tips/03_gold/05_obt_acesso.sql` link left in `doc/`; `### obt_acesso` matches the built view; record the update ids and results of T007–T011 in the Implementation Notes
+- [X] T015 Final review: `08_obt_acesso.sql` identical in the workspace; no `code_tips/03_gold/05_obt_acesso.sql` link left in `doc/`; `### obt_acesso` matches the built view; record the update ids and results of T007–T011 in the Implementation Notes
 
 ---
 
@@ -169,3 +169,47 @@ right after it. No full refresh and no table drop at any point.
 ---
 
 ## Implementation Notes
+
+**T001**: pipeline `IDLE`; `workspace.gold.obt_acesso` absent; workspace `03_gold/` held `01_`–`07_`.
+Baseline: `tb_acesso` 2,516,192, `tb_venda` 420,472, `dim_tempo` 3,654, `fato_venda` 420,472
+(checksum 581165462078), `dim_usuario` 956,251, `dim_codigos` 62, `dim_curso` 5. Every count
+equals research.md's, so Decision 6's values remain the expected ones.
+
+**T002**: `### obt_acesso` in `doc/pipeline-reference.md` rewritten before the build (grain,
+columns, sources, reconciliation); the old "one row per access" description and its
+`code_tips` link were removed.
+
+**T003–T005**: `src/pipeline/03_gold/08_obt_acesso.sql`: CTE `vendas_por_acesso` (site sales
+per `acesso_uuid`), CTE `acessos` (grouped by location, address, day, with the three counts),
+and the final `SELECT` with `LEFT JOIN gold.dim_tempo`. Header and comments in Portuguese.
+
+**T006**: no `STREAM`, `current_timestamp`, `PARTITIONED BY`, expectation or inner join. The
+file's query run as a batch: 2,516,058 rows; sums 2,516,192 / 748,571 / 218,298; 0 rows
+without calendar attributes; largest `qtde_acesso` 2.
+
+**T007**: upload identical, `03_gold/` lists `01_`–`08_`; dry run
+`b0b68327-1803-4474-a93f-004d045da75b` `COMPLETED`; ordinary update
+`a9aeef3c-ae20-4eb7-966b-a55ef09b52ac` `COMPLETED` (`full_refresh` false, no selection).
+`obt_acesso` is a `MATERIALIZED_VIEW` with `quality` = `gold`.
+
+**T008 (US1)**: `dif_acesso` 0; 2,516,058 rows; `combinacoes_repetidas` 0; `sem_acesso` 0;
+`sem_data` 0; `maior_qtde` 2; calendar `divergentes` 0; the 19 columns in FR-003 order with the
+data-model types (`qtde_*` BIGINT). `qtde_acesso` per location: `Computador` 1,136,377, `Mobile`
+1,262,684, `unknown` 117,131. Per day: 881,045, 880,259, 754,888.
+
+**T009 (US2)**: `dif_usuario` 0. Per location: 340,520, 379,439, 28,612. Per day: 262,742,
+260,646, 225,183.
+
+**T010 (US3)**: `dif_vendidos` 0. Per location: 102,148, 113,846, 2,304. Per day: 77,232,
+75,597, 65,469.
+
+**T011**: second update `35b03eaa-51b7-4dc3-bc5a-925af1872da2` `COMPLETED`; `obt_acesso`
+unchanged (2,516,058 rows; 2,516,192 / 748,571 / 218,298), and every T001 count unchanged,
+`fato_venda` checksum 581165462078 included. Warehouse stop requested.
+
+**T012–T014**: `doc/architecture.md` links `08_obt_acesso.sql`; `doc/README.md` lists it and
+counts 2 gold materialized views; `doc/known-issues.md` no longer lists `obt_acesso` as the
+earlier pipeline's.
+
+**T015**: the workspace copy is identical; no `code_tips/03_gold/05_obt_acesso.sql` link is
+left in `doc/`; `### obt_acesso` matches the built view.

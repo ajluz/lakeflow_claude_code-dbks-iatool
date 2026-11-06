@@ -27,12 +27,12 @@ query = generate_api_data(number_rows=3876831, run_as_batch=True)
 # COMMAND ----------
 
 # MAGIC %sql
-# MAGIC SELECT * FROM workspace.bronze.dados_database
+# MAGIC SELECT * FROM workspace.bronze.dados_database LIMIT 10
 
 # COMMAND ----------
 
 # MAGIC %sql
-# MAGIC SELECT * FROM workspace.bronze.dados_files
+# MAGIC SELECT * FROM workspace.bronze.dados_files LIMIT 10
 
 # COMMAND ----------
 
@@ -51,6 +51,8 @@ query = generate_api_data(number_rows=3876831, run_as_batch=True)
 # MAGIC -- -- Constraint de Check e Drop para Clientes
 # MAGIC -- AND ip_address = '999.999.999.999'
 # MAGIC --   OR access_point = 'unknown'
+# MAGIC
+# MAGIC LIMIT 10
 
 # COMMAND ----------
 
@@ -59,25 +61,23 @@ query = generate_api_data(number_rows=3876831, run_as_batch=True)
 
 # COMMAND ----------
 
-# MAGIC %sql SELECT * FROM workspace.silver.tb_quarentena
+# MAGIC %sql SELECT * FROM workspace.silver.tb_quarentena LIMIT 10
 
 # COMMAND ----------
 
-# MAGIC %sql SELECT * FROM workspace.silver.tb_acesso
+# MAGIC %sql SELECT * FROM workspace.silver.tb_acesso LIMIT 10
 
 # COMMAND ----------
 
-# MAGIC %sql SELECT * FROM workspace.silver.tb_usuario
+# MAGIC %sql SELECT * FROM workspace.silver.tb_usuario LIMIT 10
 
 # COMMAND ----------
 
-# MAGIC %sql SELECT * FROM workspace.silver.tb_venda 
-# MAGIC WHERE acesso_uuid is not null
-# MAGIC LIMIT 10
+# MAGIC %sql SELECT * FROM workspace.silver.tb_venda LIMIT 10
 
 # COMMAND ----------
 
-# MAGIC %sql SELECT * FROM workspace.silver.tb_curso
+# MAGIC %sql SELECT * FROM workspace.silver.tb_curso LIMIT 10
 
 # COMMAND ----------
 
@@ -104,11 +104,11 @@ spark.sql('SELECT * FROM workspace.silver.tb_curso').display()
 
 # COMMAND ----------
 
-# MAGIC %sql SELECT * FROM workspace.gold.dim_codigos
+# MAGIC %sql SELECT * FROM workspace.gold.dim_codigos LIMIT 10
 
 # COMMAND ----------
 
-# MAGIC %sql SELECT * FROM workspace.gold.dim_usuario ORDER BY sk_usuario ASC
+# MAGIC %sql SELECT * FROM workspace.gold.dim_usuario LIMIT 10
 
 # COMMAND ----------
 
@@ -128,7 +128,7 @@ spark.sql('SELECT * FROM workspace.gold.dim_curso').display()
 
 # COMMAND ----------
 
-# MAGIC %sql SELECT * from workspace.gold.fato_venda
+# MAGIC %sql SELECT * from workspace.gold.fato_venda LIMIT 10
 
 # COMMAND ----------
 

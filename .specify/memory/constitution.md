@@ -1,38 +1,40 @@
 <!--
 SYNC IMPACT REPORT (scratch material for review; remove before committing)
 
-Version change: 1.11.0 → 2.0.0
-Bump rationale: MAJOR. Principle III is redefined in a backward-incompatible way: it was a
-non-negotiable obligation to express every quality rule as an expectation, and it now
-allows an expectation only when the feature's spec explicitly requests it.
-Owner, 2026-11-04 (feature 009): "remove the obligation of having an expectation rule. it
-need to be explicitly requested by the spec specify".
+Version change: 2.0.0 → 3.0.0
+Bump rationale: MAJOR. Principle V is redefined in a backward-incompatible way for facts. It
+required every fact to be a materialized view, and it now requires facts to be streaming
+tables fed from silver, with stream-static dimension lookups.
+Owner, 2026-11-05 (feature 013): adopt the Databricks dimensional-modeling guidance, "facts are
+streaming tables fed from silver; their dimension lookups are stream-static joins"
+(https://docs.databricks.com/aws/en/ldp/best-practices/dimensional-modeling).
 
 Modified principles:
-- III. Data Quality Through Expectations (NON-NEGOTIABLE) → III. Data Quality Expectations
-  on Request. New request rule; "every silver table declares one" removed; NON-NEGOTIABLE
-  removed. The rules for how an expectation is written are unchanged.
-- IV. Quarantine, Never Silently Discard: warn expectations on a validation table are now
-  required only when requested. The flag and quarantine routing remain mandatory.
-- VI. Record Source and Hash Keys in Silver: the not-null hash key is verified by query; its
-  expectation is required only when requested. The `tb_curso` exception's wording follows.
+- V. Dataset Types and Flows That Fit the Source:
+  - "facts" is removed from the materialized-view list of the Gold bullet;
+  - new bullet "Facts are streaming tables": an append-only silver source; stream-static,
+    left-outer lookups coalesced to the unknown member; no inner join; keys frozen when the
+    row is written, stated in the plan, re-resolved only by an approved full refresh;
+  - rationale extended for facts.
 
-Modified sections:
-- Platform and Technology Constraints, AI tools: "a bare WHERE in place of a requested
-  expectation".
+Unchanged: Principle I (facts reconcile with silver) and Principle VII (surrogate keys, members,
+version in effect for SCD type 2) already apply to the fact's lookups.
 
 Added sections: none
 Removed sections: none
 
 Dependent templates: not modified by this command; they read the constitution at runtime.
 
-Affected files: no code becomes non-compliant. Expectations already declared in
-`src/pipeline/02_silver/` stay until a spec removes them.
+Affected files: no code becomes non-compliant, because no fact exists yet. Feature 013
+(`specs/013-gold-fato-venda/`) plans `fato_venda` as a materialized view. Its plan, research
+(Decision 1), data model, contract, quickstart and tasks must be revised to a streaming table
+before implementation.
 
 Follow-up TODOs:
-- Feature 009: FR-008, SC-002's wording, plan, research Decision 7, data model, contract,
-  quickstart and tasks still describe the two FAIL UPDATE expectations on `dim_usuario`;
-  update them when the owner's deferred request is implemented.
+- Feature 013: re-plan `fato_venda` as a streaming table, and settle in the spec what happens
+  to sales written before their dimension row exists.
+- Earlier suggestion, not part of this amendment: reword Principle I's course exceptions
+  ("carry the same price type and record source"; `dim_curso` as a reader of the feed).
 - Commit this amendment (remove this report first).
 - No deferred placeholders.
 -->
@@ -213,10 +215,25 @@ The dataset type follows from the nature of the source, not from habit.
   several sources, `AUTO CDC INTO` for change feeds, and stream-static joins against
   reference data. A result that must be recomputed in full on every update (aggregations,
   joins across growing tables) belongs in gold.
-- **Gold** is the exception. A full-scan result (joins across tables, aggregations, facts
-  and denormalized tables) MUST be a **materialized view** read without `STREAM`. A gold
+- **Gold** is the exception. A full-scan result (joins across tables, aggregations and
+  denormalized tables) MUST be a **materialized view** read without `STREAM`. A gold
   dataset fed by a change feed, such as an `AUTO CDC ... STORED AS SCD TYPE 2` dimension,
   is a streaming table.
+- **Facts are streaming tables.** A fact table (`fato_`) MUST be a **streaming table** fed
+  incrementally from its silver source with `STREAM(<silver table>)`, as the Databricks
+  dimensional-modeling guidance recommends. The rules are:
+  - The silver source MUST be append-only, for example the target of append flows. A
+    source updated or deleted in place, such as an `AUTO CDC` target, MUST NOT feed a fact
+    stream.
+  - Dimension lookups MUST be **stream-static joins**: the stream is on the left, and the
+    dimensions and any other lookup tables are read without `STREAM`.
+  - Each lookup MUST be a left outer join whose key is coalesced to the "unknown" member,
+    so that no fact row is dropped (Principles I and VII). An inner join MUST NOT be used
+    in a fact's query.
+  - A fact row's keys are resolved once, when the row is processed. A dimension row that
+    arrives later does not change fact rows already written; they keep the member they
+    were given. Each fact's plan MUST state this, and only a full refresh, approved by
+    the user, resolves them again.
 - Intermediate logic MUST default to a **temporary view**. A private streaming table (in
   bronze or silver) or a private materialized view (in gold only) is allowed only when
   materializing once avoids significant reprocessing, as with the validation table in
@@ -246,7 +263,10 @@ The dataset type follows from the nature of the source, not from habit.
 state, so each row is processed once and the pipeline's execution mode alone decides
 latency and cost. Keeping full recomputation in gold confines the one case where streaming
 is wrong: an aggregate in a streaming table that never recomputes when its source
-changes.
+changes. Facts are the opposite case: each fact row is an event that arrives once, so a
+streaming table processes each sale once instead of recomputing every sale on every
+update. The cost is that keys are frozen when the row is written, which is why the
+unknown member and the plan's statement are required.
 
 ### VI. Record Source and Hash Keys in Silver
 
@@ -476,4 +496,4 @@ this repository.
   `databricks-pipelines` skill gives syntax and patterns. Both inform implementation;
   neither overrides this document.
 
-**Version**: 2.0.0 | **Ratified**: 2026-10-10 | **Last Amended**: 2026-11-04
+**Version**: 3.0.0 | **Ratified**: 2026-10-10 | **Last Amended**: 2026-11-05

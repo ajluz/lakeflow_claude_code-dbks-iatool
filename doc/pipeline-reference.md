@@ -399,15 +399,36 @@ row where `__END_AT IS NULL`.
 
 ### dim_codigos
 
-[03_dim_codigos.sql](../code_tips/03_gold/03_dim_codigos.sql) — materialized
-view. A junk dimension holding the distinct combinations of low-cardinality sale
-attributes.
+[03_dim_codigos.sql](../src/pipeline/03_gold/03_dim_codigos.sql) — materialized view
+`workspace.gold.dim_codigos`. As built. A junk dimension: one row per **possible**
+combination of four low-cardinality sale codes, not only those some sale has. **SCD type
+1**: a row is its combination, so nothing is overwritten.
 
-Columns: `sk_codigos` (identity), `origem_usuario`, `local_acesso`
-(`'Não se aplica'` for file sales), `forma_pagamento`, `percentual_disconto`
-(`'Não se aplica'` when null), `data_carga`.
+It crosses four value lists with `CROSS JOIN`; the tables are never crossed with each other:
 
-Built from `SELECT DISTINCT` over `silver.tb_venda CROSS JOIN silver.tb_acesso`.
+| List | Source |
+|---|---|
+| origin | `DISTINCT origem` of `silver.tb_venda` |
+| access location | `DISTINCT local_acesso` of `silver.tb_acesso`, plus `Desconhecido` |
+| payment method | `DISTINCT coalesce(forma_pagamento, 'Desconhecido')` of `silver.tb_venda` |
+| discount | `DISTINCT coalesce(percentual_desconto, 'Não se aplica')` of `silver.tb_venda` |
+
+| Column | Meaning |
+|---|---|
+| `sk_codigos` | `xxhash64(origem_usuario, local_acesso, forma_pagamento, percentual_desconto) & 9223372036854775807`: deterministic, so a combination's key never changes, even when the view is recomputed or a new value adds rows |
+| `origem_usuario` | `API` / `ARQUIVO` |
+| `local_acesso` | `Mobile` / `Computador` / `unknown` (silver's unrecognised device) / `Desconhecido` (site sale without an access row); `Não se aplica` for every `ARQUIVO` row |
+| `forma_pagamento` | `boleto` / `credito` / `pix` |
+| `percentual_desconto` | `0%` / `5%` / `10%` / `15%` |
+| `data_carga` | time of the pipeline update that last wrote the row; the view is recomputed on every update |
+
+Members: `-1` with `Desconhecido` and `-2` with `Não se aplica` in all four codes. On
+2026-11-05: 48 `API` + 12 `ARQUIVO` combinations + 2 members = 62 rows; sales use 22 of
+the 60 combinations.
+
+A fact resolves `sk_codigos` by computing the same four codes for each sale (access looked
+up by `acesso_uuid`, `Desconhecido` when missing; `Não se aplica` for `ARQUIVO`) and
+matching all four; no match → `-1`.
 
 ### fato_venda
 
@@ -417,7 +438,7 @@ view. Sales fact at one row per sale.
 | Column | Resolved by |
 |---|---|
 | `sk_tempo` | `dim_tempo.data = CAST(data_venda AS DATE)` |
-| `sk_codigos` | match on payment method, origin, access location and discount percentage |
+| `sk_codigos` | the four codes computed by `dim_codigos`'s rules, matched on all four; no match → `-1` |
 | `sk_curso` | `curso_uuid`, current version only (`__END_AT IS NULL`) |
 | `sk_usuario` | `usuario_uuid` |
 | `valor_desconto` | measure |

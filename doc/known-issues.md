@@ -37,13 +37,6 @@ Fixed in silver by feature 007 (2026-10-28):
 - the `acesso_uuid` mismatch for `unknown` access points: `tb_venda` uses `tb_acesso`'s
   expression.
 
-## dim_codigos is built from a cross join
-
-[03_dim_codigos.sql:17-18](../code_tips/03_gold/03_dim_codigos.sql#L17-L18)
-cross joins `tb_venda` with `tb_acesso` before `DISTINCT`. The result is
-correct, but the intermediate row count is the product of both tables, which is
-expensive at the volumes the generators produce.
-
 ## Smaller items
 
 - [05_tb_acesso.sql:1](../code_tips/02_silver/05_tb_acesso.sql#L1) uses
@@ -52,13 +45,13 @@ expensive at the volumes the generators produce.
   `vw_bronze_tb_curso`. This is by design (constitution Principle I): `tb_curso` is SCD
   type 1 and keeps no history, so `dim_curso` (SCD type 2) cannot read it. `tb_curso` is
   the silver reference that sales and accesses join on `curso_uuid`.
-- Identity surrogate keys are declared on a materialized view (`dim_codigos`) and on an
-  `AUTO CDC` target (`dim_curso`) in the earlier pipeline. Identity columns are not
-  supported on materialized views (`databricks-pipelines` skill), and keys that can be
-  reassigned would change under `fato_venda`. `AUTO CDC` targets do not support them either
-  ([Databricks limitations](https://docs.databricks.com/aws/en/ldp/limitations)).
-  `dim_usuario` no longer has this issue: since feature 009 its key is
-  `xxhash64(usuario_uuid)` with the sign bit cleared, which never changes for a user.
+- An identity surrogate key is declared on an `AUTO CDC` target (`dim_curso`) in the
+  earlier pipeline. `AUTO CDC` targets do not support identity columns
+  ([Databricks limitations](https://docs.databricks.com/aws/en/ldp/limitations)), nor do
+  materialized views (`databricks-pipelines` skill), and keys that can be reassigned would
+  change under `fato_venda`. `dim_usuario` (feature 009) and `dim_codigos` (feature 011) no
+  longer have this issue: their keys are `xxhash64` of their business key with the sign bit
+  cleared, which never changes.
 - `dim_usuario` declares no expectations (feature 009, by the owner's decision), so a null key
   would not stop an update.
 - The bronze filter in [user_case.py](../explorations/user_case.py) mixes

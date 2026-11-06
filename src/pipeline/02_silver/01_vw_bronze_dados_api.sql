@@ -7,4 +7,4 @@ COMMENT 'Eventos da API vindos do bronze, sem source_file_name e _rescued_data.'
 AS
 SELECT
   * EXCEPT (source_file_name, _rescued_data)
-FROM STREAM(workspace.bronze.dados_api);
+FROM STREAM(presentation.bronze.dados_api);

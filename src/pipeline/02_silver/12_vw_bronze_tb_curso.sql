@@ -14,4 +14,4 @@ SELECT
   CAST(valor_curso AS DECIMAL(9,2)) AS valor_curso,
   'DATABASE'                         AS origem,
   current_timestamp()                AS data_carga
-FROM STREAM(workspace.bronze.dados_database);
+FROM STREAM(presentation.bronze.dados_database);

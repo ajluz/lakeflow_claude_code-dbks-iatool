@@ -1,6 +1,6 @@
 -- Feature 001-medallion-schemas: relatório de verificação (somente leitura).
 --
--- Mostra o estado atual dos schemas bronze, silver e gold do catálogo workspace:
+-- Mostra o estado atual dos schemas bronze, silver e gold do catálogo presentation:
 -- se existem, quem é o dono, a descrição e quem tem acesso. Não cria, altera,
 -- concede nem revoga nada, e pode ser executado em qualquer estado do ambiente.
 --
@@ -15,7 +15,7 @@
 
 WITH constantes AS (
   SELECT
-    'workspace'                    AS catalogo,
+    'presentation'                    AS catalogo,
     'arthur.luz@dataslight.com.br' AS dono
 ),
 esperado AS (
@@ -38,7 +38,7 @@ schemas AS (
     c.dono
   FROM esperado AS e
   CROSS JOIN constantes AS c
-  LEFT JOIN workspace.information_schema.schemata AS s
+  LEFT JOIN presentation.information_schema.schemata AS s
     ON s.catalog_name = c.catalogo
    AND s.schema_name = e.nome
 ),
@@ -48,7 +48,7 @@ privilegios AS (
     p.grantee,
     p.privilege_type,
     p.inherited_from
-  FROM workspace.information_schema.schema_privileges AS p
+  FROM presentation.information_schema.schema_privileges AS p
   CROSS JOIN constantes AS c
   WHERE p.catalog_name = c.catalogo
     AND p.schema_name IN (SELECT nome FROM esperado)
@@ -178,7 +178,7 @@ relatorio AS (
       ELSE 'FAIL'
     END,
     concat(cp.grantee, ': ', cp.privilege_type, ' (concedido no catálogo)')
-  FROM workspace.information_schema.catalog_privileges AS cp
+  FROM presentation.information_schema.catalog_privileges AS cp
   CROSS JOIN constantes AS c
   WHERE cp.catalog_name = c.catalogo
     AND cp.grantee <> c.dono
@@ -194,7 +194,7 @@ relatorio AS (
       'dono do catálogo: ', k.catalog_owner,
       '; membros deste dono podem gerenciar os schemas por desenho da plataforma'
     )
-  FROM workspace.information_schema.catalogs AS k
+  FROM presentation.information_schema.catalogs AS k
   CROSS JOIN constantes AS c
   WHERE k.catalog_name = c.catalogo
 )

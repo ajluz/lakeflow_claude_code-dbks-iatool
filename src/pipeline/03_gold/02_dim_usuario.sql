@@ -2,12 +2,12 @@
 -- Os fatos resolvem sk_usuario pela junção em usuario_uuid e usam -1 quando não há
 -- correspondência; -2 quando o fato não tem usuário por natureza.
 
-CREATE OR REFRESH STREAMING TABLE workspace.gold.dim_usuario
+CREATE OR REFRESH STREAMING TABLE presentation.gold.dim_usuario
 COMMENT 'Dimensão de usuários: um registro por usuário de silver.tb_usuario (SCD tipo 1), com chave substituta estável e os membros Desconhecido (-1) e Não se aplica (-2).'
 TBLPROPERTIES ("quality" = "gold");
 
 -- Usuários. Silver não entrega exclusões, então não há condição de exclusão.
-CREATE FLOW gold_dim_usuario_tb_usuario_flow AS AUTO CDC INTO workspace.gold.dim_usuario
+CREATE FLOW gold_dim_usuario_tb_usuario_flow AS AUTO CDC INTO presentation.gold.dim_usuario
 FROM STREAM(vw_gold_dim_usuario_tb_usuario)
 KEYS (usuario_uuid)
 SEQUENCE BY data_carga_silver
@@ -17,7 +17,7 @@ STORED AS SCD TYPE 1;
 -- Membros padrão, carregados uma única vez. Um snapshot trata as chaves ausentes como
 -- excluídas na sua versão: a versão de 1900 é mais antiga que qualquer linha de silver, então
 -- os usuários não são excluídos. Não remova WITH VERSION.
-CREATE FLOW gold_dim_usuario_membros_flow AS AUTO CDC ONCE INTO workspace.gold.dim_usuario
+CREATE FLOW gold_dim_usuario_membros_flow AS AUTO CDC ONCE INTO presentation.gold.dim_usuario
 FROM SNAPSHOT (
   SELECT CAST(-1 AS BIGINT) AS sk_usuario, '-1' AS usuario_uuid,
          'Desconhecido' AS nome_usuario, 'Desconhecido' AS email_usuario,

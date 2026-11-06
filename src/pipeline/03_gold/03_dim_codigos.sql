@@ -14,28 +14,28 @@
 -- Os fatos resolvem sk_codigos calculando os mesmos quatro códigos e comparando os quatro;
 -- sem correspondência, usam -1.
 
-CREATE OR REFRESH MATERIALIZED VIEW workspace.gold.dim_codigos
+CREATE OR REFRESH MATERIALIZED VIEW presentation.gold.dim_codigos
 COMMENT 'Dimensão junk: uma linha por combinação possível de origem, local de acesso, forma de pagamento e percentual de desconto, com chave substituta estável e os membros -1 e -2.'
 TBLPROPERTIES ("quality" = "gold")
 AS
 WITH origens AS (
   SELECT DISTINCT origem AS origem_usuario
-  FROM workspace.silver.tb_venda
+  FROM presentation.silver.tb_venda
 ),
 -- Desconhecido: venda do site sem acesso em tb_acesso.
 locais AS (
   SELECT DISTINCT local_acesso
-  FROM workspace.silver.tb_acesso
+  FROM presentation.silver.tb_acesso
   UNION
   SELECT 'Desconhecido'
 ),
 formas AS (
   SELECT DISTINCT coalesce(forma_pagamento, 'Desconhecido') AS forma_pagamento
-  FROM workspace.silver.tb_venda
+  FROM presentation.silver.tb_venda
 ),
 descontos AS (
   SELECT DISTINCT coalesce(percentual_desconto, 'Não se aplica') AS percentual_desconto
-  FROM workspace.silver.tb_venda
+  FROM presentation.silver.tb_venda
 ),
 -- Cruza as listas de valores, não as tabelas.
 combinacoes AS (

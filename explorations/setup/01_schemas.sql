@@ -1,5 +1,5 @@
 -- Feature 001-medallion-schemas: cria os schemas bronze, silver e gold no catálogo
--- workspace e aplica a regra de acesso: arthur.luz@dataslight.com.br é o dono e a
+-- presentation e aplica a regra de acesso: arthur.luz@dataslight.com.br é o dono e a
 -- única identidade com acesso concedido nos três schemas.
 --
 -- O script pode ser executado quantas vezes for preciso. Ele nunca remove um schema
@@ -11,7 +11,7 @@
 --
 -- Antes de qualquer alteração o script confere três pré-condições e para com erro,
 -- sem mudar nada, se alguma falhar:
---   P1. o catálogo workspace existe;
+--   P1. o catálogo presentation existe;
 --   P2. quem executa é arthur.luz@dataslight.com.br;
 --   P3. nenhum dos três schemas existe com outro dono.
 --
@@ -19,7 +19,7 @@
 -- acrescido das linhas 'revogado'.
 
 BEGIN
-  DECLARE v_catalogo STRING DEFAULT 'workspace';
+  DECLARE v_catalogo STRING DEFAULT 'presentation';
   DECLARE v_dono STRING DEFAULT 'arthur.luz@dataslight.com.br';
   DECLARE v_qtd INT DEFAULT 0;
   DECLARE v_msg STRING DEFAULT '';
@@ -35,7 +35,7 @@ BEGIN
   );
   IF v_qtd = 0 THEN
     SIGNAL SQLSTATE '45000'
-      SET MESSAGE_TEXT = 'catalog workspace not found';
+      SET MESSAGE_TEXT = 'catalog presentation not found';
   END IF;
 
   -- P2: somente o dono executa o setup, para que os schemas nunca fiquem
@@ -56,7 +56,7 @@ BEGIN
       collect_list(concat('schema ', schema_name, ' is owned by ', schema_owner)),
       '; '
     )
-    FROM workspace.information_schema.schemata
+    FROM presentation.information_schema.schemata
     WHERE catalog_name = v_catalogo
       AND schema_name IN ('bronze', 'silver', 'gold')
       AND schema_owner <> v_dono
@@ -75,30 +75,30 @@ BEGIN
       AS t (pos, nome, descricao)
     ORDER BY pos
   DO
-    EXECUTE IMMEDIATE concat('CREATE SCHEMA IF NOT EXISTS workspace.', camada.nome);
+    EXECUTE IMMEDIATE concat('CREATE SCHEMA IF NOT EXISTS presentation.', camada.nome);
 
     -- A descrição só é reaplicada quando está diferente da esperada.
     SET v_descricao_atual = (
       SELECT comment
-      FROM workspace.information_schema.schemata
+      FROM presentation.information_schema.schemata
       WHERE catalog_name = v_catalogo
         AND schema_name = camada.nome
     );
     IF NOT (v_descricao_atual <=> camada.descricao) THEN
       EXECUTE IMMEDIATE concat(
-        'COMMENT ON SCHEMA workspace.', camada.nome, " IS '", camada.descricao, "'"
+        'COMMENT ON SCHEMA presentation.', camada.nome, " IS '", camada.descricao, "'"
       );
     END IF;
 
     EXECUTE IMMEDIATE concat(
-      'GRANT ALL PRIVILEGES ON SCHEMA workspace.', camada.nome, ' TO `', v_dono, '`'
+      'GRANT ALL PRIVILEGES ON SCHEMA presentation.', camada.nome, ' TO `', v_dono, '`'
     );
 
     -- Revoga todo privilégio concedido diretamente no schema a qualquer outra
     -- identidade. Privilégios herdados do catálogo não são alterados.
     concessoes: FOR concessao AS
       SELECT DISTINCT grantee, privilege_type
-      FROM workspace.information_schema.schema_privileges
+      FROM presentation.information_schema.schema_privileges
       WHERE catalog_name = v_catalogo
         AND schema_name = camada.nome
         AND inherited_from = 'NONE'
@@ -106,7 +106,7 @@ BEGIN
     DO
       EXECUTE IMMEDIATE concat(
         'REVOKE ', replace(concessao.privilege_type, '_', ' '),
-        ' ON SCHEMA workspace.', camada.nome,
+        ' ON SCHEMA presentation.', camada.nome,
         ' FROM `', concessao.grantee, '`'
       );
       SET v_revogados = array_append(
@@ -125,7 +125,7 @@ BEGIN
   -- (verificado em 2026-10-10), então 'acesso_direto' mostra o estado final.
   WITH constantes AS (
     SELECT
-      'workspace'                    AS catalogo,
+      'presentation'                    AS catalogo,
       'arthur.luz@dataslight.com.br' AS dono
   ),
   esperado AS (
@@ -148,7 +148,7 @@ BEGIN
       c.dono
     FROM esperado AS e
     CROSS JOIN constantes AS c
-    LEFT JOIN workspace.information_schema.schemata AS s
+    LEFT JOIN presentation.information_schema.schemata AS s
       ON s.catalog_name = c.catalogo
      AND s.schema_name = e.nome
   ),
@@ -158,7 +158,7 @@ BEGIN
       p.grantee,
       p.privilege_type,
       p.inherited_from
-    FROM workspace.information_schema.schema_privileges AS p
+    FROM presentation.information_schema.schema_privileges AS p
     CROSS JOIN constantes AS c
     WHERE p.catalog_name = c.catalogo
       AND p.schema_name IN (SELECT nome FROM esperado)
@@ -288,7 +288,7 @@ BEGIN
         ELSE 'FAIL'
       END,
       concat(cp.grantee, ': ', cp.privilege_type, ' (concedido no catálogo)')
-    FROM workspace.information_schema.catalog_privileges AS cp
+    FROM presentation.information_schema.catalog_privileges AS cp
     CROSS JOIN constantes AS c
     WHERE cp.catalog_name = c.catalogo
       AND cp.grantee <> c.dono
@@ -304,7 +304,7 @@ BEGIN
         'dono do catálogo: ', k.catalog_owner,
         '; membros deste dono podem gerenciar os schemas por desenho da plataforma'
       )
-    FROM workspace.information_schema.catalogs AS k
+    FROM presentation.information_schema.catalogs AS k
     CROSS JOIN constantes AS c
     WHERE k.catalog_name = c.catalogo
 

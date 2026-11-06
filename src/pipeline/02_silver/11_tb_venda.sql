@@ -7,7 +7,7 @@
 -- As chaves de acesso, usuário e curso usam as mesmas expressões de tb_acesso e tb_usuario.
 -- venda_uuid é único hoje nas duas origens; a unicidade é verificada a cada carga.
 
-CREATE OR REFRESH STREAMING TABLE workspace.silver.tb_venda (
+CREATE OR REFRESH STREAMING TABLE presentation.silver.tb_venda (
   CONSTRAINT check_venda_uuid   EXPECT (venda_uuid IS NOT NULL),
   CONSTRAINT check_usuario_uuid EXPECT (usuario_uuid IS NOT NULL),
   CONSTRAINT check_curso_uuid   EXPECT (curso_uuid IS NOT NULL),
@@ -18,9 +18,9 @@ COMMENT 'Vendas do site (API) e vendas corporativas das empresas parceiras (ARQU
 TBLPROPERTIES ("quality" = "silver");
 
 CREATE FLOW silver_tb_venda_api_flow AS
-INSERT INTO workspace.silver.tb_venda BY NAME
+INSERT INTO presentation.silver.tb_venda BY NAME
 SELECT * FROM STREAM(vw_silver_tb_venda_api);
 
 CREATE FLOW silver_tb_venda_files_flow AS
-INSERT INTO workspace.silver.tb_venda BY NAME
+INSERT INTO presentation.silver.tb_venda BY NAME
 SELECT * FROM STREAM(vw_silver_tb_venda_files);

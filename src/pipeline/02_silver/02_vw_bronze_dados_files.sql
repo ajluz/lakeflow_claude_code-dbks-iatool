@@ -7,4 +7,4 @@ COMMENT 'Vendas corporativas vindas do bronze, sem source_file_name e _rescued_d
 AS
 SELECT
   * EXCEPT (source_file_name, _rescued_data)
-FROM STREAM(workspace.bronze.dados_files);
+FROM STREAM(presentation.bronze.dados_files);

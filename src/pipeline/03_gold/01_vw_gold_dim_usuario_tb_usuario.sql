@@ -20,4 +20,4 @@ SELECT
   origem,
   current_timestamp() AS data_carga,
   data_carga          AS data_carga_silver
-FROM STREAM(workspace.silver.tb_usuario);
+FROM STREAM(presentation.silver.tb_usuario);

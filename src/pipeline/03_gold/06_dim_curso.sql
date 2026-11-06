@@ -11,12 +11,12 @@
 -- Os fatos resolvem sk_curso pela versão do curso_uuid em vigor na data do fato
 -- ([__START_AT, __END_AT)); sem correspondência, usam -1.
 
-CREATE OR REFRESH STREAMING TABLE workspace.gold.dim_curso
+CREATE OR REFRESH STREAMING TABLE presentation.gold.dim_curso
 COMMENT 'Dimensão de cursos com histórico (SCD tipo 2): uma linha por versão de cada curso, com chave substituta por versão, validade em __START_AT e __END_AT e os membros Desconhecido (-1) e Não se aplica (-2).'
 TBLPROPERTIES ("quality" = "gold");
 
 -- Versões dos cursos, a partir do feed de mudanças.
-CREATE FLOW gold_dim_curso_flow AS AUTO CDC INTO workspace.gold.dim_curso
+CREATE FLOW gold_dim_curso_flow AS AUTO CDC INTO presentation.gold.dim_curso
 FROM STREAM(vw_gold_dim_curso_dados_database)
 KEYS (curso_uuid)
 APPLY AS DELETE WHEN change_type = 'delete'
@@ -27,7 +27,7 @@ STORED AS SCD TYPE 2;
 -- Membros padrão, uma única vez (ONCE): o fluxo lê a view uma vez e fica ocioso, então os
 -- membros nunca são reenviados, nem quando chegam mudanças do catálogo. Mesmas cláusulas do
 -- fluxo das versões.
-CREATE FLOW gold_dim_curso_membros_flow AS AUTO CDC ONCE INTO workspace.gold.dim_curso
+CREATE FLOW gold_dim_curso_membros_flow AS AUTO CDC ONCE INTO presentation.gold.dim_curso
 FROM STREAM(vw_gold_dim_curso_membros)
 KEYS (curso_uuid)
 APPLY AS DELETE WHEN change_type = 'delete'

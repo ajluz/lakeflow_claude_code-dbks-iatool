@@ -27,17 +27,17 @@ query = generate_api_data(number_rows=3876831, run_as_batch=True)
 # COMMAND ----------
 
 # MAGIC %sql
-# MAGIC SELECT * FROM workspace.bronze.dados_database
+# MAGIC SELECT * FROM presentation.bronze.dados_database
 
 # COMMAND ----------
 
 # MAGIC %sql
-# MAGIC SELECT * FROM workspace.bronze.dados_files
+# MAGIC SELECT * FROM presentation.bronze.dados_files
 
 # COMMAND ----------
 
 # MAGIC %sql
-# MAGIC SELECT * FROM workspace.bronze.dados_api
+# MAGIC SELECT * FROM presentation.bronze.dados_api
 # MAGIC WHERE 1=1
 # MAGIC -- -- QUARENTENA - Tabela para analises futuras
 # MAGIC AND payload.info_produto.product_name = 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
@@ -59,30 +59,30 @@ query = generate_api_data(number_rows=3876831, run_as_batch=True)
 
 # COMMAND ----------
 
-# MAGIC %sql SELECT * FROM workspace.silver.tb_quarentena
+# MAGIC %sql SELECT * FROM presentation.silver.tb_quarentena
 
 # COMMAND ----------
 
-# MAGIC %sql SELECT * FROM workspace.silver.tb_acesso
+# MAGIC %sql SELECT * FROM presentation.silver.tb_acesso
 
 # COMMAND ----------
 
-# MAGIC %sql SELECT * FROM workspace.silver.tb_usuario
+# MAGIC %sql SELECT * FROM presentation.silver.tb_usuario
 
 # COMMAND ----------
 
-# MAGIC %sql SELECT * FROM workspace.silver.tb_venda 
+# MAGIC %sql SELECT * FROM presentation.silver.tb_venda 
 # MAGIC WHERE acesso_uuid is not null
 # MAGIC LIMIT 10
 
 # COMMAND ----------
 
-# MAGIC %sql SELECT * FROM workspace.silver.tb_curso
+# MAGIC %sql SELECT * FROM presentation.silver.tb_curso
 
 # COMMAND ----------
 
-spark.sql('SELECT * FROM workspace.bronze.dados_database').display()
-spark.sql('SELECT * FROM workspace.silver.tb_curso').display()
+spark.sql('SELECT * FROM presentation.bronze.dados_database').display()
+spark.sql('SELECT * FROM presentation.silver.tb_curso').display()
 
 # COMMAND ----------
 
@@ -90,8 +90,8 @@ generate_database_data(type_of_data='update row')
 
 # COMMAND ----------
 
-spark.sql('SELECT * FROM workspace.bronze.dados_database').display()
-spark.sql('SELECT * FROM workspace.silver.tb_curso').display()
+spark.sql('SELECT * FROM presentation.bronze.dados_database').display()
+spark.sql('SELECT * FROM presentation.silver.tb_curso').display()
 
 # COMMAND ----------
 
@@ -100,21 +100,21 @@ spark.sql('SELECT * FROM workspace.silver.tb_curso').display()
 
 # COMMAND ----------
 
-# MAGIC %sql SELECT * FROM workspace.gold.dim_tempo LIMIT 10
+# MAGIC %sql SELECT * FROM presentation.gold.dim_tempo LIMIT 10
 
 # COMMAND ----------
 
-# MAGIC %sql SELECT * FROM workspace.gold.dim_codigos
+# MAGIC %sql SELECT * FROM presentation.gold.dim_codigos
 
 # COMMAND ----------
 
-# MAGIC %sql SELECT * FROM workspace.gold.dim_usuario ORDER BY sk_usuario ASC
+# MAGIC %sql SELECT * FROM presentation.gold.dim_usuario ORDER BY sk_usuario ASC
 
 # COMMAND ----------
 
-spark.sql('SELECT * FROM workspace.bronze.dados_database').display()
-spark.sql('SELECT * FROM workspace.silver.tb_curso').display()
-spark.sql('SELECT * FROM workspace.gold.dim_curso').display()
+spark.sql('SELECT * FROM presentation.bronze.dados_database').display()
+spark.sql('SELECT * FROM presentation.silver.tb_curso').display()
+spark.sql('SELECT * FROM presentation.gold.dim_curso').display()
 
 # COMMAND ----------
 
@@ -122,13 +122,13 @@ generate_database_data(type_of_data='delete row')
 
 # COMMAND ----------
 
-spark.sql('SELECT * FROM workspace.bronze.dados_database').display()
-spark.sql('SELECT * FROM workspace.silver.tb_curso').display()
-spark.sql('SELECT * FROM workspace.gold.dim_curso').display()
+spark.sql('SELECT * FROM presentation.bronze.dados_database').display()
+spark.sql('SELECT * FROM presentation.silver.tb_curso').display()
+spark.sql('SELECT * FROM presentation.gold.dim_curso').display()
 
 # COMMAND ----------
 
-# MAGIC %sql SELECT * from workspace.gold.fato_venda
+# MAGIC %sql SELECT * from presentation.gold.fato_venda
 
 # COMMAND ----------
 
@@ -136,11 +136,11 @@ spark.sql('SELECT * FROM workspace.gold.dim_curso').display()
 # MAGIC SELECT
 # MAGIC     COUNT(*) AS quantidade_cursos_vendidos,
 # MAGIC     SUM(f.valor_pago) - SUM(f.valor_desconto) AS valor_faturamento_bruto
-# MAGIC FROM workspace.gold.fato_venda as f
-# MAGIC JOIN workspace.gold.dim_codigos AS cd ON f.sk_codigos = cd.sk_codigos
-# MAGIC JOIN workspace.gold.dim_curso AS cs ON f.sk_curso = cs.sk_curso 
-# MAGIC JOIN workspace.gold.dim_tempo AS t ON f.sk_tempo = t.sk_tempo
-# MAGIC JOIN workspace.gold.dim_usuario AS u ON f.sk_usuario = u.sk_usuario
+# MAGIC FROM presentation.gold.fato_venda as f
+# MAGIC JOIN presentation.gold.dim_codigos AS cd ON f.sk_codigos = cd.sk_codigos
+# MAGIC JOIN presentation.gold.dim_curso AS cs ON f.sk_curso = cs.sk_curso 
+# MAGIC JOIN presentation.gold.dim_tempo AS t ON f.sk_tempo = t.sk_tempo
+# MAGIC JOIN presentation.gold.dim_usuario AS u ON f.sk_usuario = u.sk_usuario
 # MAGIC WHERE t.ano = 2024
 # MAGIC   AND t.mes = 'junho'
 # MAGIC   AND cd.local_acesso = 'Mobile'
@@ -154,7 +154,7 @@ spark.sql('SELECT * FROM workspace.gold.dim_curso').display()
 # MAGIC   SUM(qtde_usuario) AS quantidade_usuario,
 # MAGIC   SUM(qtde_vendidos) AS quantidade_vendas,
 # MAGIC   CAST((SUM(qtde_vendidos)/SUM(qtde_acesso))*100 AS INT) AS percentual_vendas
-# MAGIC FROM workspace.gold.obt_acesso
+# MAGIC FROM presentation.gold.obt_acesso
 # MAGIC WHERE local_acesso = 'Computador'
 # MAGIC   AND mes = 'junho'
 # MAGIC   AND ano = 2024

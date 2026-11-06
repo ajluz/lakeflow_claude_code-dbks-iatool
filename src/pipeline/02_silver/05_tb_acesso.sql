@@ -9,7 +9,7 @@
 -- usuario_uuid usa a mesma expressão de tb_usuario; curso_uuid é igual ao identificador do
 -- catálogo de cursos (md5 do nome do curso).
 
-CREATE OR REFRESH STREAMING TABLE workspace.silver.tb_acesso (
+CREATE OR REFRESH STREAMING TABLE presentation.silver.tb_acesso (
   CONSTRAINT check_endereco_ip_acesso EXPECT (endereco_ip_acesso IS NULL OR endereco_ip_acesso != '999.999.999.999') ON VIOLATION DROP ROW,
   CONSTRAINT check_local_acesso       EXPECT (local_acesso != 'unknown'),
   -- CONSTRAINT check_local_acesso    EXPECT (local_acesso != 'unknown') ON VIOLATION FAIL UPDATE,
@@ -38,5 +38,5 @@ SELECT
   END AS curso_uuid,
   'API' AS origem,
   current_timestamp() AS data_carga
-FROM STREAM(workspace.silver.temp_tb_validacao_api)
+FROM STREAM(presentation.silver.temp_tb_validacao_api)
 WHERE NOT fl_registro_invalido;

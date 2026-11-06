@@ -2,7 +2,7 @@
 -- Origem: banco de dados do catálogo, entregue como change feed em arquivos CSV na pasta
 -- database/ do volume landing.
 
-CREATE OR REFRESH STREAMING TABLE workspace.bronze.dados_database
+CREATE OR REFRESH STREAMING TABLE presentation.bronze.dados_database
 COMMENT 'Mudanças do catálogo de cursos (insert, update, delete), exatamente como chegaram.'
 TBLPROPERTIES ("quality" = "bronze")
 AS

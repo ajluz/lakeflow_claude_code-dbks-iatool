@@ -1,7 +1,7 @@
 -- Camada bronze: vendas corporativas.
 -- Origem: empresas parceiras, entregue como arquivos CSV na pasta files/ do volume landing.
 
-CREATE OR REFRESH STREAMING TABLE workspace.bronze.dados_files
+CREATE OR REFRESH STREAMING TABLE presentation.bronze.dados_files
 COMMENT 'Vendas corporativas enviadas por empresas parceiras, exatamente como chegaram.'
 TBLPROPERTIES ("quality" = "bronze")
 AS

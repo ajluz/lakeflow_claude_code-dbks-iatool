@@ -17,6 +17,6 @@ SELECT
   CAST(NULL AS STRING)                        AS empresa_usuario,
   'API'                                       AS origem,
   current_timestamp()                         AS data_carga
-FROM STREAM(workspace.silver.temp_tb_validacao_api)
+FROM STREAM(presentation.silver.temp_tb_validacao_api)
 WHERE NOT fl_registro_invalido
   AND payload.info_usuario.nome IS NOT NULL;

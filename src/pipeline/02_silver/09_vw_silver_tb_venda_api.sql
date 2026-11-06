@@ -54,7 +54,7 @@ FROM (
     try_cast(replace(regexp_replace(payload.info_produto.valor, '[^0-9,]', ''), ',', '.') AS DECIMAL(9,2)) AS preco,
     CAST(coalesce(payload.info_pagamento.disconto, 0) AS DECIMAL(5,2))                                       AS fracao,
     CAST(preco * fracao AS DECIMAL(9,2))                                                                     AS valor_desconto
-  FROM STREAM(workspace.silver.temp_tb_validacao_api)
+  FROM STREAM(presentation.silver.temp_tb_validacao_api)
   WHERE NOT fl_registro_invalido
     AND payload.info_pagamento IS NOT NULL
 );

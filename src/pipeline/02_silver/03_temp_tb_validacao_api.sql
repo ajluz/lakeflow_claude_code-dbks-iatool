@@ -3,7 +3,7 @@
 -- nenhuma linha é descartada.
 -- fl_registro_invalido = true segue para tb_quarentena; false segue para as tabelas conformadas.
 
-CREATE OR REFRESH PRIVATE STREAMING TABLE workspace.silver.temp_tb_validacao_api (
+CREATE OR REFRESH PRIVATE STREAMING TABLE presentation.silver.temp_tb_validacao_api (
   CONSTRAINT curso_invalido           EXPECT (payload.info_produto.product_name IS NULL OR payload.info_produto.product_name != 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'),
   CONSTRAINT valor_invalido           EXPECT (payload.info_pagamento.valor IS NULL OR payload.info_pagamento.valor != '0.00'),
   CONSTRAINT forma_pagamento_invalido EXPECT (payload.info_pagamento.forma_pagamento IS NULL OR payload.info_pagamento.forma_pagamento != '-----')

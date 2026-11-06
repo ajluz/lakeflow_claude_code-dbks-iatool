@@ -85,7 +85,7 @@ flowchart LR
     V4 --> S4
 
     S3 --> G1
-    B3 --> G2
+    V5 --> G2
     S4 --> G3
     S2 --> G3
 
@@ -104,7 +104,7 @@ flowchart LR
 Rounded nodes are temporary views, which exist only inside the pipeline.
 `dim_tempo` is a regular Delta table created outside the pipeline, by
 [04_dim_tempo.sql](../explorations/setup/04_dim_tempo.sql). Note that
-`dim_curso` reads the bronze change feed directly, not `silver.tb_curso`.
+`dim_curso` reads the bronze change feed through `vw_bronze_tb_curso`, not `silver.tb_curso`.
 
 The graph as rendered by the pipeline UI:
 
@@ -126,11 +126,11 @@ The graph as rendered by the pipeline UI:
 | Two append flows into one table, one per source (`CREATE FLOW ... INSERT INTO ... BY NAME`) | [08_tb_usuario.sql](../src/pipeline/02_silver/08_tb_usuario.sql) |
 | Multiple append flows into one table (`CREATE FLOW ... INSERT INTO ... BY NAME`) | [11_tb_venda.sql](../src/pipeline/02_silver/11_tb_venda.sql) |
 | `AUTO CDC` as SCD type 1 | [13_tb_curso.sql](../src/pipeline/02_silver/13_tb_curso.sql), [02_dim_usuario.sql](../src/pipeline/03_gold/02_dim_usuario.sql) |
-| `AUTO CDC` as SCD type 2 (`__START_AT` / `__END_AT`) | [02_dim_curso.sql](../code_tips/03_gold/02_dim_curso.sql) |
-| Explicit schema with identity surrogate keys | [02_dim_curso.sql](../code_tips/03_gold/02_dim_curso.sql) |
-| Deterministic surrogate key (`xxhash64` of the business key) | [01_vw_gold_dim_usuario_tb_usuario.sql](../src/pipeline/03_gold/01_vw_gold_dim_usuario_tb_usuario.sql), [03_dim_codigos.sql](../src/pipeline/03_gold/03_dim_codigos.sql) |
+| `AUTO CDC` as SCD type 2 (`__START_AT` / `__END_AT`) | [06_dim_curso.sql](../src/pipeline/03_gold/06_dim_curso.sql) |
+| Deterministic surrogate key (`xxhash64` of the business key) | [01_vw_gold_dim_usuario_tb_usuario.sql](../src/pipeline/03_gold/01_vw_gold_dim_usuario_tb_usuario.sql), [03_dim_codigos.sql](../src/pipeline/03_gold/03_dim_codigos.sql), [04_vw_gold_dim_curso_dados_database.sql](../src/pipeline/03_gold/04_vw_gold_dim_curso_dados_database.sql) (one key per version) |
 | Junk dimension: cross join of value lists, members by `UNION ALL` | [03_dim_codigos.sql](../src/pipeline/03_gold/03_dim_codigos.sql) |
 | Default members (`-1` unknown, `-2` not applicable) through `AUTO CDC ONCE ... FROM SNAPSHOT` | [02_dim_usuario.sql](../src/pipeline/03_gold/02_dim_usuario.sql) |
+| Default members through a once-only `AUTO CDC ONCE` flow from a view (SCD type 2, where a snapshot flow is not allowed) | [05_vw_gold_dim_curso_membros.sql](../src/pipeline/03_gold/05_vw_gold_dim_curso_membros.sql), [06_dim_curso.sql](../src/pipeline/03_gold/06_dim_curso.sql) |
 | Materialized views | [03_dim_codigos.sql](../src/pipeline/03_gold/03_dim_codigos.sql), [04_fato_vendas.sql](../code_tips/03_gold/04_fato_vendas.sql), [05_obt_acesso.sql](../code_tips/03_gold/05_obt_acesso.sql) |
 
 ### Legacy and current syntax

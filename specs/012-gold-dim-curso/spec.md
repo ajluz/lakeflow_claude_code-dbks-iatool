@@ -15,6 +15,7 @@
 - Q: The request names the history columns `start_at` and `end_at`, but SCD type 2 on a change feed always names them `__START_AT` and `__END_AT` and cannot rename them. How does the dimension get its validity columns? → A: Keep `__START_AT` and `__END_AT`, in one dimension fed by the change feed (owner).
 - Q: The request asks for `valor_curso` as `double`, but the feed view and `silver.tb_curso` store it as `DECIMAL(9,2)`, and the constitution says both carry the same price type. Which type? → A: `DECIMAL(9,2)` (owner).
 - Q: The request lists neither `origem` nor `data_carga`. Should the dimension include them? → A: Add `data_carga` only, as the other gold dimensions do; `origem` stays out (owner).
+- Q: During implementation, the platform rejected loading the members by a one-time snapshot flow next to the SCD type 2 change flow (`MULTI_QUERY_SNAPSHOT_TARGET_NOT_SUPPORTED`), even with a full refresh. How do the members get in? → A: Still in the same `dim_curso`, without a silver history table: a second view derives the two member rows from the course change stream (each sent once) and a second ordinary change flow writes them into the dimension, valid from 1900-01-01 (owner). If the platform rejects this too, the fallback is a silver history table with `dim_curso` as a materialized view.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -185,7 +186,8 @@ always current.
 - **FR-010**: The dimension reads the bronze change feed through its boundary view
   `vw_bronze_tb_curso`, not `silver.tb_curso`, which keeps no history (constitution,
   Principle I exception). It MUST NOT apply cleansing or business rules to the feed beyond
-  excluding the change-control and lineage columns and the record source.
+  excluding the change-control and lineage columns and the record source. The members'
+  flow uses the feed only to emit the two fixed rows once; it does not alter course rows.
 - **FR-011**: The dimension MUST NOT reference another dimension, and MUST carry
   `quality` = `gold`.
 - **FR-012**: The definitions MUST follow the constitution: SQL, current syntax, gold
@@ -213,7 +215,7 @@ always current.
   and price equal silver's, and the number of current course rows equals silver's row
   count.
 - **SC-004**: After a second update with no new data, 100% of recorded rows and surrogate
-  keys are unchanged, members included.
+  keys are unchanged, members included, `data_carga` included.
 - **SC-005**: Exactly 1 "unknown" row and 1 "not applicable" row exist, both current.
 - **SC-007**: 100% of rows have a filled `data_carga`, and the dimension has exactly the 8
   columns of FR-002.

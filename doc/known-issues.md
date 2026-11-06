@@ -45,13 +45,11 @@ Fixed in silver by feature 007 (2026-10-28):
   `vw_bronze_tb_curso`. This is by design (constitution Principle I): `tb_curso` is SCD
   type 1 and keeps no history, so `dim_curso` (SCD type 2) cannot read it. `tb_curso` is
   the silver reference that sales and accesses join on `curso_uuid`.
-- An identity surrogate key is declared on an `AUTO CDC` target (`dim_curso`) in the
-  earlier pipeline. `AUTO CDC` targets do not support identity columns
-  ([Databricks limitations](https://docs.databricks.com/aws/en/ldp/limitations)), nor do
-  materialized views (`databricks-pipelines` skill), and keys that can be reassigned would
-  change under `fato_venda`. `dim_usuario` (feature 009) and `dim_codigos` (feature 011) no
-  longer have this issue: their keys are `xxhash64` of their business key with the sign bit
-  cleared, which never changes.
+- `AUTO CDC ... FROM SNAPSHOT` cannot share a target with change flows when the target is SCD
+  type 2 (`MULTI_QUERY_SNAPSHOT_TARGET_NOT_SUPPORTED`, feature 012); the Databricks CDC page
+  limits that pattern to SCD type 1. `dim_usuario` (type 1) loads its members that way;
+  `dim_curso` (type 2) loads them with an `AUTO CDC ONCE` flow from a view instead. No identity
+  key remains in gold: `dim_usuario`, `dim_codigos` and `dim_curso` use `xxhash64` keys.
 - `dim_usuario` declares no expectations (feature 009, by the owner's decision), so a null key
   would not stop an update.
 - The bronze filter in [user_case.py](../explorations/user_case.py) mixes

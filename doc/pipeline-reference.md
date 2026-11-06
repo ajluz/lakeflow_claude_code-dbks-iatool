@@ -7,8 +7,8 @@ The Bronze section, and in Silver the views `vw_bronze_dados_api` and
 `vw_bronze_dados_files`, the course feed view `vw_bronze_tb_curso`, the flow views
 `vw_silver_tb_usuario_api`, `vw_silver_tb_usuario_files`, `vw_silver_tb_venda_api` and
 `vw_silver_tb_venda_files`, and the sections `temp_tb_validacao_api`, `tb_quarentena`,
-`tb_acesso`, `tb_usuario`, `tb_venda` and `tb_curso`, and in Gold the section
-`dim_usuario` with its flow view, describe the pipeline as it is built today, under [src/pipeline/](../src/pipeline/). The other Silver datasets and the Gold
+`tb_acesso`, `tb_usuario`, `tb_venda` and `tb_curso`, and in Gold the sections
+`dim_usuario`, `dim_codigos` and `dim_curso` with their flow views, describe the pipeline as it is built today, under [src/pipeline/](../src/pipeline/). The other Silver datasets and the Gold
 section still describe the earlier pipeline, whose `code_tips/` folder is no longer
 in the repository; they will be replaced as those layers are rebuilt.
 
@@ -61,7 +61,7 @@ Exist only during a pipeline update and are not published to the catalog.
 | `vw_silver_tb_usuario_files` | [07](../src/pipeline/02_silver/07_vw_silver_tb_usuario_files.sql) | flow view: `vw_bronze_dados_files` in `tb_usuario`'s 10 columns, `usuario_uuid` included. As built |
 | `vw_silver_tb_venda_api` | [09](../src/pipeline/02_silver/09_vw_silver_tb_venda_api.sql) | flow view: valid API events with a payment, in `tb_venda`'s 13 columns, with the access, user and course keys written as in `tb_acesso`. As built |
 | `vw_silver_tb_venda_files` | [10](../src/pipeline/02_silver/10_vw_silver_tb_venda_files.sql) | flow view: `vw_bronze_dados_files` in `tb_venda`'s 13 columns, user key as in `tb_usuario`. As built |
-| `vw_bronze_tb_curso` | [12](../src/pipeline/02_silver/12_vw_bronze_tb_curso.sql) | the course feed's boundary view (constitution v1.11.0, Principle I): `STREAM(bronze.dados_database)` minus `source_file_name`, `_rescued_data`, with `valor_curso` as `DECIMAL(9,2)` and `origem = 'DATABASE'`, `data_carga` added; no filter. Read by `tb_curso` and, later, `dim_curso`. As built |
+| `vw_bronze_tb_curso` | [12](../src/pipeline/02_silver/12_vw_bronze_tb_curso.sql) | the course feed's boundary view (constitution v1.11.0, Principle I): `STREAM(bronze.dados_database)` minus `source_file_name`, `_rescued_data`, with `valor_curso` as `DECIMAL(9,2)` and `origem = 'DATABASE'`, `data_carga` added; no filter. Read by `tb_curso` and by `dim_curso`'s two flow views. As built |
 
 ### temp_tb_validacao_api
 
@@ -388,14 +388,49 @@ key unchanged, and a later update with no new data left every key and `data_carg
 
 ### dim_curso
 
-[02_dim_curso.sql](../code_tips/03_gold/02_dim_curso.sql) — streaming table,
-target of an `AUTO CDC` flow (`gold_dim_curso_flow`) stored as **SCD type 2**.
-Same key, sequence, delete condition and excluded columns as `tb_curso`, but it
-reads `bronze.dados_database` directly.
+[06_dim_curso.sql](../src/pipeline/03_gold/06_dim_curso.sql) — streaming table
+`workspace.gold.dim_curso`, target of two `AUTO CDC` flows stored as **SCD type 2**. As built.
+Grain: one version of one course, plus two members.
 
-Columns: `sk_curso` (identity), `curso_uuid`, `nome_curso`, `nivel_curso`,
-`valor_curso`, `__START_AT`, `__END_AT`. The current version of a course is the
-row where `__END_AT IS NULL`.
+**Bronze dependency.** It reads `bronze.dados_database` through the boundary view
+`vw_bronze_tb_curso`, not `silver.tb_curso` (constitution, Principle I exception): `tb_curso`
+is SCD type 1 and keeps neither history nor the ordered change events that type 2 needs.
+
+| Flow | Reads | What it does |
+|---|---|---|
+| `gold_dim_curso_flow` | [vw_gold_dim_curso_dados_database](../src/pipeline/03_gold/04_vw_gold_dim_curso_dados_database.sql), a temporary view over `STREAM(vw_bronze_tb_curso)` that computes `sk_curso` and leaves out `origem` and `processing_time` | the course versions: `KEYS (curso_uuid)`, `APPLY AS DELETE WHEN change_type = 'delete'`, `SEQUENCE BY timestamp_change`, the same as `tb_curso`; `COLUMNS * EXCEPT (change_type, timestamp_change)` |
+| `gold_dim_curso_membros_flow` | [vw_gold_dim_curso_membros](../src/pipeline/03_gold/05_vw_gold_dim_curso_membros.sql), the two member rows, cross-joined to `STREAM(vw_bronze_tb_curso)` because an `AUTO CDC` source must be a stream (the course rows are not used) | the members, with `AUTO CDC ONCE` and the same clauses: it runs once and then stays idle, so the members are never sent again |
+
+| Column | Type | From |
+|---|---|---|
+| `sk_curso` | BIGINT | `xxhash64(curso_uuid, timestamp_change) & 9223372036854775807`: one key per version, from the course and the change time that opened it. Deterministic, so never reassigned; closing a version sets only `__END_AT`. `-1` and `-2` for the members |
+| `curso_uuid` | STRING | business key, the identifier delivered by the source; `'-1'` / `'-2'` for the members |
+| `nome_curso`, `nivel_curso` | STRING | feed, unchanged; the member's label for the members |
+| `valor_curso` | DECIMAL(9,2) | feed view, the same type as `tb_curso`; null for the members |
+| `data_carga` | TIMESTAMP | the time gold wrote the version; it does not move when the version is closed or on an update with no new data |
+| `__START_AT` | TIMESTAMP | `timestamp_change` of the event that opened the version; `1900-01-01` for the members |
+| `__END_AT` | TIMESTAMP | `timestamp_change` of the event that closed it; null while current |
+
+**Current version**: `WHERE __END_AT IS NULL`. A fact resolves the version in effect at its
+date: `curso_uuid` matches and the date is in `[__START_AT, __END_AT)`; no match → `-1`.
+
+**Version lifecycle.** An update closes the open version and opens a new one with its own key.
+A delete closes the open version and removes nothing. There is no `TRACK HISTORY`: every change
+event opens a version, because tracking only the attributes would let an update that repeats
+them overwrite the current version's key.
+
+**Default members**: `-1` / `'-1'` "Desconhecido" and `-2` / `'-2'` "Não se aplica", valid from
+1900-01-01 and never closed. They are not loaded by a snapshot flow, as in `dim_usuario`: a
+snapshot flow can share a target with change flows only on SCD type 1
+(`MULTI_QUERY_SNAPSHOT_TARGET_NOT_SUPPORTED`).
+
+**Expectations**: none (the spec requests none). Keys are verified by query.
+
+On 2026-11-05: 5 rows, 3 open course versions (one per course, equal to `tb_curso`) and the 2
+members; every key unique, course keys positive. An update with no new data left every row,
+key and `data_carga` unchanged. **Updates and deletions** are shown at the talk, not run during
+implementation: after `update row` the beginner course has a closed 247.00 version and an open
+147.00 one; after `delete row` it has no open version and keeps both.
 
 ### dim_codigos
 

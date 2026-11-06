@@ -14,6 +14,16 @@ Sources:
 
 No item of the Technical Context was left as NEEDS CLARIFICATION.
 
+**Revision (2026-11-05, during implementation)**:
+- Decision 5 failed on the platform with `MULTI_QUERY_SNAPSHOT_TARGET_NOT_SUPPORTED`, also
+  with a full refresh selection. The Databricks CDC page explains why: a snapshot flow can
+  share a target with change flows only on SCD type 1 ("This pattern does not support SCD
+  Type 2").
+- The owner kept the single-table design and asked for the members to come from a view
+  before the dimension (spec, Clarifications).
+- Decision 9 replaces Decision 5. Decision 10 records the fallback.
+- Every other decision still applies.
+
 ## Decision 1: One streaming table fed by `AUTO CDC ... STORED AS SCD TYPE 2`
 
 - **Decision**: `workspace.gold.dim_curso` is a streaming table, target of the flow
@@ -99,7 +109,7 @@ No item of the Technical Context was left as NEEDS CLARIFICATION.
 - **Alternatives considered**: `TRACK HISTORY ON` the three attributes, rejected because
   it can change a key.
 
-## Decision 5: Members through a one-time SCD 2 snapshot flow
+## Decision 5: Members through a one-time SCD 2 snapshot flow (superseded by Decision 9: rejected by the platform)
 
 - **Decision**: `gold_dim_curso_membros_flow`, built the same way as `dim_usuario`'s:
   - `AUTO CDC ONCE INTO workspace.gold.dim_curso FROM SNAPSHOT (...)`, with two rows:
@@ -158,3 +168,62 @@ No item of the Technical Context was left as NEEDS CLARIFICATION.
 - **Rationale**: `dim_curso` does not exist in the workspace today (checked 2026-11-05),
   so nothing is dropped or refreshed.
 - **Alternatives considered**: none.
+
+## Decision 9: Members through a once-only `AUTO CDC` flow from a members view (supersedes 5)
+
+- **Decision**:
+  - **View**: a temporary view `vw_gold_dim_curso_membros`, in its own file numbered
+    between the two `dim_curso` files. It holds the two member rows in the change flow's
+    shape:
+
+    | `sk_curso` | `curso_uuid` | `nome_curso` | `nivel_curso` | `valor_curso` | `data_carga` | `change_type` | `timestamp_change` |
+    |---|---|---|---|---|---|---|---|
+    | `-1` | `'-1'` | `Desconhecido` | `Desconhecido` | `CAST(NULL AS DECIMAL(9,2))` | `current_timestamp()` | `'insert'` | `TIMESTAMP'1900-01-01'` |
+    | `-2` | `'-2'` | `Não se aplica` | `Não se aplica` | `CAST(NULL AS DECIMAL(9,2))` | `current_timestamp()` | `'insert'` | `TIMESTAMP'1900-01-01'` |
+
+  - **Flow**: `gold_dim_curso_membros_flow AS AUTO CDC ONCE INTO workspace.gold.dim_curso`,
+    with the same `KEYS (curso_uuid)`, `APPLY AS DELETE WHEN change_type = 'delete'`,
+    `SEQUENCE BY timestamp_change`, `COLUMNS * EXCEPT (change_type, timestamp_change)` and
+    `STORED AS SCD TYPE 2` as `gold_dim_curso_flow`.
+  - **Source form**, tried in this order with dry runs:
+    1. `FROM vw_gold_dim_curso_membros`, a batch read of a view that selects the two
+       literal rows. This is exactly the owner's idea: the members are written in a view
+       before the dimension.
+    2. If the platform requires a streaming source, the view reads
+       `STREAM(vw_bronze_tb_curso)` with a `CROSS JOIN` to the two literal rows, and the
+       flow reads `FROM STREAM(vw_gold_dim_curso_membros)`. Each change event present at
+       the first run then yields both rows, identical, with one key and one sequence value.
+       The run must show one row per member.
+- **Rationale**:
+  - The Databricks docs describe a once-only `AUTO CDC` flow next to the ongoing one for
+    initial hydration (`database-replication` page: `CREATE FLOW ... AS AUTO CDC ONCE INTO
+    ... FROM stream(...) KEYS ... SEQUENCE BY ...`). The same keys and schema are required.
+  - `ONCE` runs once and stays idle on later updates. The members are never sent again,
+    not even when the demo's update and delete arrive, so nothing can reopen or duplicate
+    them. Only a full refresh re-runs it, and that rebuilds both flows.
+  - The sequence value 1900-01-01 becomes the members' `__START_AT`, so they are valid for
+    any fact date, and no course event can close them (different keys).
+  - The table stays one streaming table. No silver table and no drop are needed.
+  - The literal form does not read bronze, so the Principle I exception's rule about rules
+    on the feed does not arise. The streaming variant reads the feed only as a trigger and
+    changes no course row.
+- **Unknowns, settled by the dry run and update**:
+  - whether `ONCE` accepts SCD type 2 (the docs' examples use type 1);
+  - whether a batch view is accepted;
+  - in the streaming variant, how identical rows with one key and sequence are handled.
+- **Alternatives considered**:
+  - `UNION ALL` of the literal rows inside the change flow's view: Spark cannot union a
+    stream with static rows, and the constitution forbids `UNION` across streams
+    (Principle V).
+  - A streaming members flow without `ONCE`: it would re-send the members on every
+    change event, including at the demo.
+  - Decision 10.
+
+## Decision 10: Fallback, history in silver and the dimension as a materialized view
+
+Used only if Decision 9 is rejected by the platform. Silver `tb_curso_historico` (an
+`AUTO CDC` SCD type 2 copy of `tb_curso`'s flow) under a materialized view `dim_curso` that
+computes `xxhash64(curso_uuid, __START_AT)` and adds the members with `UNION ALL`. It needs
+the owner's approval to drop the current streaming table. It also adds a dataset the graph
+does not show and deviates from Principle VI (no hash key, identifier repeated per version).
+The owner chose Decision 9 first (spec, Clarifications).

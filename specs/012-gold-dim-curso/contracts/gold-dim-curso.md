@@ -28,6 +28,7 @@ The 8 columns of [data-model.md](../data-model.md), in that order, with those ty
 
 ## Producer
 
-`src/pipeline/03_gold/04_vw_gold_dim_curso_dados_database.sql` and
-`src/pipeline/03_gold/05_dim_curso.sql`, pipeline `lakeflow_dataslight_dev`. Reads bronze
+`src/pipeline/03_gold/04_vw_gold_dim_curso_dados_database.sql`,
+`src/pipeline/03_gold/05_vw_gold_dim_curso_membros.sql` and
+`src/pipeline/03_gold/06_dim_curso.sql`, pipeline `lakeflow_dataslight_dev`. Reads bronze
 through `vw_bronze_tb_curso` (constitution, Principle I exception).

@@ -32,7 +32,7 @@ query = generate_api_data(number_rows=3876831, run_as_batch=True)
 # COMMAND ----------
 
 # MAGIC %sql
-# MAGIC SELECT * FROM presentation.bronze.dados_files
+# MAGIC SELECT * FROM presentation.bronze.dados_files LIMIT 10
 
 # COMMAND ----------
 
@@ -51,6 +51,7 @@ query = generate_api_data(number_rows=3876831, run_as_batch=True)
 # MAGIC -- -- Constraint de Check e Drop para Clientes
 # MAGIC -- AND ip_address = '999.999.999.999'
 # MAGIC --   OR access_point = 'unknown'
+# MAGIC LIMIT 10
 
 # COMMAND ----------
 
@@ -59,20 +60,20 @@ query = generate_api_data(number_rows=3876831, run_as_batch=True)
 
 # COMMAND ----------
 
-# MAGIC %sql SELECT * FROM presentation.silver.tb_quarentena
+# MAGIC %sql SELECT * FROM presentation.silver.tb_quarentena LIMIT 10
 
 # COMMAND ----------
 
-# MAGIC %sql SELECT * FROM presentation.silver.tb_acesso
+# MAGIC %sql SELECT * FROM presentation.silver.tb_acesso LIMIT 10
 
 # COMMAND ----------
 
-# MAGIC %sql SELECT * FROM presentation.silver.tb_usuario
+# MAGIC %sql SELECT * FROM presentation.silver.tb_usuario LIMIT 10
 
 # COMMAND ----------
 
 # MAGIC %sql SELECT * FROM presentation.silver.tb_venda 
-# MAGIC WHERE acesso_uuid is not null
+# MAGIC -- WHERE acesso_uuid is not null
 # MAGIC LIMIT 10
 
 # COMMAND ----------
@@ -104,11 +105,11 @@ spark.sql('SELECT * FROM presentation.silver.tb_curso').display()
 
 # COMMAND ----------
 
-# MAGIC %sql SELECT * FROM presentation.gold.dim_codigos
+# MAGIC %sql SELECT * FROM presentation.gold.dim_codigos LIMIT 10
 
 # COMMAND ----------
 
-# MAGIC %sql SELECT * FROM presentation.gold.dim_usuario ORDER BY sk_usuario ASC
+# MAGIC %sql SELECT * FROM presentation.gold.dim_usuario LIMIT 10
 
 # COMMAND ----------
 
